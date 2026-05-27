@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Stylized connection track path lines in the background -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M 28,54 C 28,34 80,34 80,54"
+        android:strokeWidth="4"
+        android:strokeColor="#4ADE80"
+        android:strokeLineCap="round" />
+        
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M 28,54 L 80,54"
+        android:strokeWidth="4"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Left destination node marker -->
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M 28,54 m -7,0 a 7,7 0,1 1,14 0 a 7,7 0,1 1,-14 0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 28,54 m -3,0 a 3,3 0,1 1,6 0 a 3,3 0,1 1,-6 0" />
+
+    <!-- Right destination node marker -->
+    <path
+        android:fillColor="#EC4899"
+        android:pathData="M 80,54 m -7,0 a 7,7 0,1 1,14 0 a 7,7 0,1 1,-14 0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 80,54 m -3,0 a 3,3 0,1 1,6 0 a 3,3 0,1 1,-6 0" />
+
+    <!-- Central location pin / bus shell marker group -->
+    <group
+        android:translateX="0"
+        android:translateY="-4">
+        
+        <!-- Background outer glow for the central symbol -->
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M54,54m-19,0a19,19 0,1 1,38 0a19,19 0,1 1,-38 0"
+            android:strokeWidth="1.5"
+            android:strokeColor="#803B82F6" />
+
+        <!-- Circular solid backdrop for high contrast -->
+        <path
+            android:fillColor="#3B82F6"
+            android:pathData="M54,54m-16,0a16,16 0,1 1,32 0a16,16 0,1 1,-32 0" />
+
+        <!-- Custom Sleek Bus Vector Silhouette inside the circle -->
+        <!-- Center of circle is at 54,54 -->
+        <!-- Bus width: ~18dp, height: ~20dp -->
+        <!-- Let's draw front view of modern double-decker or sleek city transit bus -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="
+                M 45,43 
+                h 18 
+                c 1.5,0 2.5,1 2.5,2.5 
+                v 14 
+                c 0,1.2 -0.8,1.8 -2,1.8 
+                h -1.5 
+                v 1.2 
+                c 0,0.5 -0.4,0.9 -0.9,0.9 
+                h -1.2 
+                c -0.5,0 -0.9,-0.4 -0.9,-0.9 
+                v -1.2 
+                h -10 
+                v 1.2 
+                c 0,0.5 -0.4,0.9 -0.9,0.9 
+                h -1.2 
+                c -0.5,0 -0.9,-0.4 -0.9,-0.9 
+                v -1.2 
+                h -1.5 
+                c -1.2,0 -2,-0.6 -2,-1.8 
+                v -14 
+                c 0,-1.5 1,-2.5 2.5,-2.5 
+                z" />
+
+        <!-- Windshield windows in black/navy for realism -->
+        <!-- Upper destination screen -->
+        <path
+            android:fillColor="#1E293B"
+            android:pathData="M 47,45 h 14 v 1.5 h -14 z" />
+            
+        <!-- Main windshield -->
+        <path
+            android:fillColor="#1E293B"
+            android:pathData="M 46.5,48 h 15 v 5 h -15 z" />
+            
+        <!-- Lower passenger window -->
+        <path
+            android:fillColor="#1E293B"
+            android:pathData="M 46.5,54.5 h 7 v 4 h -7 z" />
+        <path
+            android:fillColor="#1E293B"
+            android:pathData="M 54.5,54.5 h 7 v 4 h -7 z" />
+
+        <!-- Left/Right headlights -->
+        <path
+            android:fillColor="#EAB308"
+            android:pathData="M 47,59.5 m -1,0 a 1,1 0,1 1,2 0 a 1,1 0,1 1,-2 0" />
+        <path
+            android:fillColor="#EAB308"
+            android:pathData="M 61,59.5 m -1,0 a 1,1 0,1 1,2 0 a 1,1 0,1 1,-2 0" />
+    </group>
+</vector>

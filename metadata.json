@@ -1,0 +1,6 @@
+{
+  "name": "BusTour Optimizer",
+  "description": "Optimizează traseele turistice și recomandă cele mai rapide combinații de autobuz pentru a economisi timp.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
