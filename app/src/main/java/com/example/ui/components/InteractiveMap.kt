@@ -43,6 +43,9 @@ import kotlin.math.min
 import kotlin.math.sqrt
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
+import com.example.ui.screens.translateDirections
+import com.example.ui.screens.translateSpotName
+import com.example.data.translate
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import coil.request.ImageRequest
@@ -140,6 +143,7 @@ fun TileMapLayer(
     scaleProvider: () -> Float,
     offsetProvider: () -> Offset,
     mapColorSchemeStyle: String,
+    isHighResolution: Boolean,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -159,7 +163,17 @@ fun TileMapLayer(
                     translationY = o.y
                 }
         ) {
-            val zoom = 13
+            val zoom = if (isHighResolution) {
+                when (city) {
+                    "București" -> 15
+                    else -> 16
+                }
+            } else {
+                when (city) {
+                    "București" -> 14
+                    else -> 15
+                }
+            }
             val minX = kotlin.math.floor(getTileX(bounds.minLng, zoom)).toInt()
             val maxX = kotlin.math.ceil(getTileX(bounds.maxLng, zoom)).toInt() - 1
             val minY = kotlin.math.floor(getTileY(bounds.maxLat, zoom)).toInt()
@@ -187,11 +201,14 @@ fun TileMapLayer(
                             "OSM French", "French Style" ->
                                 "https://a.tile.openstreetmap.fr/osmfr/$zoom/$tileX/$tileY.png"
                             "Ocean Breeze" ->
-                                "https://basemaps.cartocdn.com/rastertiles/voyager/$zoom/$tileX/$tileY.png"
+                                if (isHighResolution) "https://basemaps.cartocdn.com/rastertiles/voyager/$zoom/$tileX/$tileY@2x.png"
+                                else "https://basemaps.cartocdn.com/rastertiles/voyager/$zoom/$tileX/$tileY.png"
                             "Muted Gray" ->
-                                "https://basemaps.cartocdn.com/light_all/$zoom/$tileX/$tileY.png"
+                                if (isHighResolution) "https://basemaps.cartocdn.com/light_all/$zoom/$tileX/$tileY@2x.png"
+                                else "https://basemaps.cartocdn.com/light_all/$zoom/$tileX/$tileY.png"
                             else ->
-                                "https://basemaps.cartocdn.com/dark_all/$zoom/$tileX/$tileY.png"
+                                if (isHighResolution) "https://basemaps.cartocdn.com/dark_all/$zoom/$tileX/$tileY@2x.png"
+                                else "https://basemaps.cartocdn.com/dark_all/$zoom/$tileX/$tileY.png"
                         }
 
                         AsyncImage(
@@ -245,7 +262,9 @@ fun InteractiveMap(
     onStopSimulationClick: (() -> Unit)? = null,
     isStationsVisible: Boolean = true,
     isTransitLinesVisible: Boolean = true,
-    mapColorSchemeStyle: String = "Slate Neon"
+    mapColorSchemeStyle: String = "Slate Neon",
+    isHighResolutionMap: Boolean = true,
+    isEnglish: Boolean = false
 ) {
     val bounds = when (city) {
         "București" -> BUCURESTI_BOUNDS
@@ -385,7 +404,8 @@ fun InteractiveMap(
             bounds = bounds,
             scaleProvider = scaleProvider,
             offsetProvider = offsetProvider,
-            mapColorSchemeStyle = mapColorSchemeStyle
+            mapColorSchemeStyle = mapColorSchemeStyle,
+            isHighResolution = isHighResolutionMap
         )
 
         // Grid background drawing + bus layers + spots pins
@@ -395,38 +415,44 @@ fun InteractiveMap(
                 .testTag("interactive_map_canvas")
                 .pointerInput(city) {
                     detectTransformGestures { _, pan, zoom, _ ->
-                        scale = max(0.8f, min(scale * zoom, 6.0f))
-                        offset += pan
+                        val nextScale = scale * zoom
+                        if (!nextScale.isNaN() && !nextScale.isInfinite()) {
+                            scale = max(0.8f, min(nextScale, 6.0f))
+                        }
+                        if (!pan.x.isNaN() && !pan.y.isNaN() && !pan.x.isInfinite() && !pan.y.isInfinite()) {
+                            offset += pan
+                        }
                     }
                 }
                 .pointerInput(city) {
                     detectTapGestures(
                         onTap = { localOffset ->
-                            // Transform canvas coordinates back to original relative to zoom/pan offset
                             val width = size.width.toFloat()
                             val height = size.height.toFloat()
 
-                            // Convert local click to coordinate offset considering Zoom and Pan
-                            // localOffset = (mapOffset * scale) + offset
-                            // Therefore: mapOffset = (localOffset - offset) / scale
-                            val mapCoords = (localOffset - offset) / scale
-                            
-                            // Check bounds
-                            if (mapCoords.x in 0f..width && mapCoords.y in 0f..height) {
-                                // 1. Check if user tapped near an existing tourist spot marker
-                                val clickedSpot = spots.find { spot ->
-                                    val pt = bounds.toOffset(spot.latitude, spot.longitude, width, height)
-                                    val dx = mapCoords.x - pt.x
-                                    val dy = mapCoords.y - pt.y
-                                    (dx * dx + dy * dy) <= (28f * 28f) // 28-pixel touch target tolerance
-                                }
+                            if (width > 0f && height > 0f && scale > 0f && !scale.isNaN()) {
+                                // Convert local click to coordinate offset considering Zoom and Pan
+                                // localOffset = (mapOffset * scale) + offset
+                                // Therefore: mapOffset = (localOffset - offset) / scale
+                                val mapCoords = (localOffset - offset) / scale
+                                
+                                // Check bounds
+                                if (mapCoords.x in 0f..width && mapCoords.y in 0f..height) {
+                                    // 1. Check if user tapped near an existing tourist spot marker
+                                    val clickedSpot = spots.find { spot ->
+                                        val pt = bounds.toOffset(spot.latitude, spot.longitude, width, height)
+                                        val dx = mapCoords.x - pt.x
+                                        val dy = mapCoords.y - pt.y
+                                        (dx * dx + dy * dy) <= (28f * 28f) // 28-pixel touch target tolerance
+                                    }
 
-                                if (clickedSpot != null) {
-                                    onSpotClick(clickedSpot)
-                                    selectedSpotForDetails = clickedSpot
-                                } else {
-                                    val (lat, lng) = bounds.toLatLng(mapCoords, width, height)
-                                    onMapTap(lat, lng)
+                                    if (clickedSpot != null) {
+                                        onSpotClick(clickedSpot)
+                                        selectedSpotForDetails = clickedSpot
+                                    } else {
+                                        val (lat, lng) = bounds.toLatLng(mapCoords, width, height)
+                                        onMapTap(lat, lng)
+                                    }
                                 }
                             }
                         }
@@ -469,7 +495,11 @@ fun InteractiveMap(
 
             // 2. Draw Bus Lines Paths
             if (isTransitLinesVisible) {
+                val activeBusLines = journey?.legs?.mapNotNull { it.busLineName }?.toSet() ?: emptySet()
                 for (line in lines) {
+                    if (journey != null && line.name !in activeBusLines) {
+                        continue // Non-essential bus lines disappear when a route is active to focus on the selected path!
+                    }
                     val path = Path()
                     var configured = false
                     val lineCol = try {
@@ -631,7 +661,11 @@ fun InteractiveMap(
                     else -> Color(0xFF0F172A)
                 }
 
+                val activeStations = journey?.legs?.flatMap { listOfNotNull(it.boardingStation, it.alightingStation) }?.toSet() ?: emptySet()
                 for (station in stations) {
+                    if (journey != null && station.name !in activeStations) {
+                        continue // Non-essential bus stations disappear when a route is active to focus on the selected path!
+                    }
                     val pt = bounds.toOffset(station.latitude, station.longitude, width, height)
                     
                     // Outer ring
@@ -673,6 +707,9 @@ fun InteractiveMap(
 
             // 5. Draw Tourist Spot Pins as Gorgeous Descriptive Miniature Cards/Thumbnails
             for (spot in spots) {
+                if (journey != null && !spot.isSelected) {
+                    continue // Non-essential tourist spots disappear when a route is active to focus on the selected path!
+                }
                 val pt = bounds.toOffset(spot.latitude, spot.longitude, width, height)
                 val pinColor = when {
                     !spot.isSelected -> Color(0xFF475569) // Muted gray for inactive
@@ -799,7 +836,8 @@ fun InteractiveMap(
                 fontSize = (10 / scale).sp,
                 fontWeight = FontWeight.ExtraBold
             )
-            val startLabelLayout = textMeasurer.measure(AnnotatedString("START: ${startSpot.name}"), style = startLabelStyle)
+            val displayName = if (isEnglish) "START: ${translateSpotName(startSpot.name, true)}" else "START: ${startSpot.name}"
+            val startLabelLayout = textMeasurer.measure(AnnotatedString(displayName), style = startLabelStyle)
             val startLabelPos = Offset(startPt.x - (startLabelLayout.size.width / 2f), startPt.y + (12f / scale))
             
             drawRoundRect(
@@ -852,7 +890,7 @@ fun InteractiveMap(
                     fontSize = (8 / scale).sp,
                     fontWeight = FontWeight.ExtraBold
                 )
-                val gpsLabelLayout = textMeasurer.measure(AnnotatedString("TU"), style = gpsLabelStyle)
+                val gpsLabelLayout = textMeasurer.measure(AnnotatedString(if (isEnglish) "YOU" else "TU"), style = gpsLabelStyle)
                 val gpsLabelPos = Offset(gpsPt.x - (gpsLabelLayout.size.width / 2f), gpsPt.y - (24f / scale))
                 
                 drawRoundRect(
@@ -878,7 +916,7 @@ fun InteractiveMap(
                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.size(44.dp).testTag("zoom_in_button")
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Apropie Harta")
+                Icon(Icons.Default.Add, contentDescription = if (isEnglish) "Zoom In" else "Apropie Harta")
             }
 
             FloatingActionButton(
@@ -887,7 +925,7 @@ fun InteractiveMap(
                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.size(44.dp).testTag("zoom_out_button")
             ) {
-                Icon(Icons.Default.Close, contentDescription = "Depărtează Harta")
+                Icon(Icons.Default.Close, contentDescription = if (isEnglish) "Zoom Out" else "Depărtează Harta")
             }
 
             FloatingActionButton(
@@ -900,7 +938,7 @@ fun InteractiveMap(
                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.size(44.dp).testTag("reset_zoom_button")
             ) {
-                Icon(Icons.Default.Refresh, contentDescription = "Restabilește vizualizarea", modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.Refresh, contentDescription = if (isEnglish) "Reset Zoom / View" else "Restabilește vizualizarea", modifier = Modifier.size(18.dp))
             }
 
             // GPS Locator Button
@@ -916,7 +954,7 @@ fun InteractiveMap(
             ) {
                 Icon(
                     imageVector = Icons.Default.LocationOn,
-                    contentDescription = "Simulează Live Locație GPS",
+                    contentDescription = if (isEnglish) "Simulate Live GPS Location" else "Simulează Live Locație GPS",
                     modifier = Modifier.size(20.dp),
                     tint = if (userGpsLocation != null) Color.White else Color(0xFF06B6D4)
                 )
@@ -931,7 +969,11 @@ fun InteractiveMap(
                 ) {
                     Icon(
                         imageVector = if (isDashboardVisible) Icons.Default.KeyboardArrowDown else Icons.Default.Menu,
-                        contentDescription = if (isDashboardVisible) "Ascunde panou" else "Afișează panou",
+                        contentDescription = if (isDashboardVisible) {
+                            if (isEnglish) "Hide dashboard" else "Ascunde panou"
+                        } else {
+                            if (isEnglish) "Show dashboard" else "Afișează panou"
+                        },
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -966,7 +1008,7 @@ fun InteractiveMap(
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            text = "Legendă",
+                            text = if (isEnglish) "Legend" else "Legendă",
                             color = Color.White,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
@@ -987,33 +1029,33 @@ fun InteractiveMap(
                         ) {
                             LegendItem(
                                 color = Color(0xFFEC4899),
-                                text = "Punct Pornire (START)"
+                                text = if (isEnglish) "Starting Point (START)" else "Punct Pornire (START)"
                             )
                             LegendItem(
                                 color = Color(0xFF6366F1),
-                                text = "Atracție Selectată"
+                                text = if (isEnglish) "Selected Attraction" else "Atracție Selectată"
                             )
                             LegendItem(
                                 color = Color(0xFF475569),
-                                text = "Atracție Neselectată"
+                                text = if (isEnglish) "Unselected Attraction" else "Atracție Neselectată"
                             )
                             LegendItem(
                                 color = Color(0xFFEAB308),
-                                text = "Atracție Personalizată"
+                                text = if (isEnglish) "Custom Location" else "Atracție Personalizată"
                             )
                             LegendItem(
                                 color = Color(0xFF0284C7),
-                                text = "Linie Autobuz Tranzit",
+                                text = if (isEnglish) "Transit Bus Line" else "Linie Autobuz Tranzit",
                                 isLine = true
                             )
                             LegendItem(
                                 color = Color(0xFFE2E8F0),
-                                text = "Segment Pietonal",
+                                text = if (isEnglish) "Pedestrian Segment" else "Segment Pietonal",
                                 isDashed = true
                             )
                             LegendItem(
                                 color = Color(0xFF94A3B8),
-                                text = "Stație Autobuz",
+                                text = if (isEnglish) "Bus Station" else "Stație Autobuz",
                                 isStation = true
                             )
                         }
@@ -1049,7 +1091,7 @@ fun InteractiveMap(
                             modifier = Modifier.size(14.dp)
                         )
                         Text(
-                            text = "Atinge pentru punct personalizat! Click pe pin pentru detalii.",
+                            text = if (isEnglish) "Tap to add custom point! Click pin for details." else "Atinge pentru punct personalizat! Click pe pin pentru detalii.",
                             color = Color(0xFFCBD5E1),
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Medium,
@@ -1062,7 +1104,7 @@ fun InteractiveMap(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
-                            contentDescription = "Închide",
+                            contentDescription = if (isEnglish) "Close" else "Închide",
                             tint = Color(0xFF94A3B8),
                             modifier = Modifier.size(14.dp)
                         )
@@ -1088,7 +1130,7 @@ fun InteractiveMap(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
-                            text = "🛰️ Semnal GPS Conectat",
+                            text = if (isEnglish) "🛰️ GPS Symbol Connected" else "🛰️ Semnal GPS Conectat",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF22D3EE)
@@ -1096,7 +1138,7 @@ fun InteractiveMap(
                     }
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Vrei să pornești de la locația ta GPS exactă pe hartă?",
+                        text = if (isEnglish) "Start your route from your exact GPS location on the map?" else "Vrei să pornești de la locația ta GPS exactă pe hartă?",
                         fontSize = 9.sp,
                         color = Color(0xFFE2E8F0)
                     )
@@ -1111,7 +1153,7 @@ fun InteractiveMap(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                         modifier = Modifier.height(26.dp)
                     ) {
-                        Text("Pornește de aici", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(if (isEnglish) "Start from here" else "Pornește de aici", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }
@@ -1159,13 +1201,13 @@ fun InteractiveMap(
                             }
                             Column {
                                 Text(
-                                    text = "NAVIGAȚIE ACTIVĂ",
+                                    text = if (isEnglish) "ACTIVE NAVIGATION" else "NAVIGAȚIE ACTIVĂ",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = Color(0xFF10B981)
                                 )
                                 Text(
-                                    text = "Ghidaj în timp real pe hartă",
+                                    text = if (isEnglish) "Real-time navigation guide on map" else "Ghidaj în timp real pe hartă",
                                     fontSize = 9.sp,
                                     color = Color(0xFF94A3B8)
                                 )
@@ -1186,7 +1228,7 @@ fun InteractiveMap(
                         ) {
                             Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(10.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Oprește", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Text(if (isEnglish) "Stop" else "Oprește", fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                     
@@ -1214,7 +1256,11 @@ fun InteractiveMap(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Etapa ${activeNavigationLegIndex + 1} din ${journey.legs.size}: ${if (isBus) "Autobuz ${activeLeg.busLineName ?: ""}" else "Deplasare Pietonală"}",
+                                text = if (isEnglish) {
+                                    "Stage ${activeNavigationLegIndex + 1} of ${journey.legs.size}: ${if (isBus) "Bus Line ${activeLeg.busLineName ?: ""}" else "Walk on Foot"}"
+                                } else {
+                                    "Etapa ${activeNavigationLegIndex + 1} din ${journey.legs.size}: ${if (isBus) "Autobuz ${activeLeg.busLineName ?: ""}" else "Deplasare Pietonală"}"
+                                },
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp,
                                 color = Color.White
@@ -1236,7 +1282,7 @@ fun InteractiveMap(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = activeLeg.directions,
+                                text = translateDirections(activeLeg.directions, isEnglish),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFFE2E8F0),
                                 modifier = Modifier.padding(10.dp),
@@ -1293,7 +1339,11 @@ fun InteractiveMap(
                             ) {
                                 Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Black)
                                 Text(
-                                    text = if (activeNavigationLegIndex == journey.legs.size - 1) "Finalizează Traseul 🏁" else "Următoarea Etapă ➔",
+                                    text = if (activeNavigationLegIndex == journey.legs.size - 1) {
+                                        if (isEnglish) "Finish Route 🏁" else "Finalizează Traseul 🏁"
+                                    } else {
+                                        if (isEnglish) "Next Stage ➔" else "Următoarea Etapă ➔"
+                                    },
                                     fontWeight = FontWeight.ExtraBold,
                                     fontSize = 12.sp,
                                     color = Color.Black
@@ -1308,13 +1358,13 @@ fun InteractiveMap(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = "🎉 Traseu Finalizat cu Succes!",
+                                text = if (isEnglish) "🎉 Route Successfully Completed!" else "🎉 Traseu Finalizat cu Succes!",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
                                 color = Color(0xFF10B981)
                             )
                             Text(
-                                text = "Ai vizitat toate atracțiile selectate cu succes folosind transportul public!",
+                                text = if (isEnglish) "You have visited all of your selected attractions using municipal transit!" else "Ai vizitat toate atracțiile selectate cu succes folosind transportul public!",
                                 textAlign = TextAlign.Center,
                                 fontSize = 10.sp,
                                 color = Color(0xFFCBD5E1)
@@ -1330,7 +1380,7 @@ fun InteractiveMap(
                                 border = BorderStroke(1.dp, Color(0xFF475569)),
                                 modifier = Modifier.height(32.dp)
                             ) {
-                                Text("Închide Ghidajul", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text(if (isEnglish) "Close Guidance" else "Închide Ghidajul", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -1400,7 +1450,7 @@ fun InteractiveMap(
                                 }
                                 Column {
                                     Text(
-                                        text = spot.name,
+                                        text = spot.translate(isEnglish).name,
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White,
@@ -1410,7 +1460,11 @@ fun InteractiveMap(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        val badgeText = if (spot.isCustom) "Personalizat" else "Recomandat"
+                                        val badgeText = if (spot.isCustom) {
+                                            if (isEnglish) "Custom" else "Personalizat"
+                                        } else {
+                                            if (isEnglish) "Recommended" else "Recomandat"
+                                        }
                                         val badgeColor = if (spot.isCustom) Color(0xFFEAB308) else Color(0xFF6366F1)
                                         Box(
                                             modifier = Modifier
@@ -1425,7 +1479,7 @@ fun InteractiveMap(
                                             )
                                         }
                                         Text(
-                                            text = "${spot.visitDurationMinutes} min",
+                                            text = if (isEnglish) "${spot.visitDurationMinutes} min" else "${spot.visitDurationMinutes} min",
                                             fontSize = 11.sp,
                                             color = Color(0xFF94A3B8),
                                             fontWeight = FontWeight.Medium
@@ -1439,7 +1493,7 @@ fun InteractiveMap(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
-                                    contentDescription = "Închide detalii",
+                                    contentDescription = if (isEnglish) "Close details" else "Închide detalii",
                                     tint = Color(0xFF94A3B8),
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -1449,8 +1503,9 @@ fun InteractiveMap(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         // Description
+                        val displayDesc = spot.translate(isEnglish).description
                         Text(
-                            text = if (spot.description.isNotEmpty()) spot.description else "Nicio descriere adăugată pentru acest obiectiv.",
+                            text = if (displayDesc.isNotEmpty()) displayDesc else (if (isEnglish) "No description added for this spot." else "Nicio descriere adăugată pentru acest obiectiv."),
                             style = MaterialTheme.typography.bodySmall,
                             color = Color(0xFFCBD5E1),
                             maxLines = 2
@@ -1484,7 +1539,7 @@ fun InteractiveMap(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = if (spot.isSelected) "Exclude" else "Include",
+                                    text = if (spot.isSelected) (if (isEnglish) "Exclude" else "Exclude") else (if (isEnglish) "Include" else "Include"),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -1509,7 +1564,7 @@ fun InteractiveMap(
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Setează Start", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text(if (isEnglish) "Set Start" else "Setează Start", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
 
@@ -1526,7 +1581,7 @@ fun InteractiveMap(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,
-                                        contentDescription = "Șterge punct",
+                                        contentDescription = if (isEnglish) "Delete location" else "Șterge punct",
                                         tint = Color(0xFFEF4444),
                                         modifier = Modifier.size(16.dp)
                                     )

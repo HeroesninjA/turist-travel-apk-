@@ -26,8 +26,9 @@ object OSMRoutingService {
     ): List<Pair<Double, Double>> = withContext(Dispatchers.IO) {
         val cacheKey = "%.5f,%.5f_%.5f,%.5f".format(fromLat, fromLng, toLat, toLng)
         synchronized(routeCache) {
-            if (routeCache.containsKey(cacheKey)) {
-                return@withContext routeCache[cacheKey]!!
+            val cached = routeCache[cacheKey]
+            if (cached != null) {
+                return@withContext cached
             }
         }
 

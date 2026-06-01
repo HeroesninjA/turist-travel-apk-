@@ -38,12 +38,19 @@ import com.example.domain.TransportOperator
 import com.example.domain.TransitAlert
 import com.example.domain.LiveTransitVehicle
 import com.example.ui.AppViewModel
+import com.example.ui.WeatherInfo
 import com.example.ui.components.InteractiveMap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.IntrinsicSize
 import kotlinx.coroutines.launch
+import android.content.Context
+import android.location.LocationManager
+import android.os.Bundle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.example.data.TestingLog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,6 +65,8 @@ fun MainScreen(
     val optimizedJourney by viewModel.optimizedJourney.collectAsState()
     val aiRecommendation by viewModel.aiRecommendation.collectAsState()
     val isAiLoading by viewModel.isAiLoading.collectAsState()
+    val currentWeather by viewModel.currentWeather.collectAsState()
+    val selectedWeatherPreset by viewModel.selectedWeatherPreset.collectAsState()
 
     // Overlay add spot dialog state
     var showAddSpotDialog by remember { mutableStateOf(false) }
@@ -70,9 +79,10 @@ fun MainScreen(
     var newSpotDuration by remember { mutableStateOf("60") } // string for easy editing
 
     // Active bottom card tab state
-    var selectedDashboardTab by remember { mutableStateOf(0) } // 0: Checklist, 1: Timeline, 2: AI Guide, 3: Saved
+    var selectedDashboardTab by remember { mutableStateOf(0) } // 0: Checklist, 1: Timeline, 2: Live Testing, 3: AI Guide, 4: Saved
 
     var isDashboardVisible by remember { mutableStateOf(true) }
+    var isDashboardExpanded by remember { mutableStateOf(true) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -83,6 +93,7 @@ fun MainScreen(
     var isTransitLinesVisible by rememberSaveable { mutableStateOf(true) }
     var simulationSpeedMultiplier by rememberSaveable { mutableStateOf(1.0f) }
     var mapColorSchemeStyle by rememberSaveable { mutableStateOf("OSM Standard") }
+    var isHighResolutionMap by rememberSaveable { mutableStateOf(true) }
     var isSoundAlertEnabled by rememberSaveable { mutableStateOf(true) }
     var isEnglishLanguage by rememberSaveable { mutableStateOf(false) }
 
@@ -91,6 +102,83 @@ fun MainScreen(
     var isSimulatingNavigation by remember { mutableStateOf(false) }
     var activeNavigationLegIndex by remember { mutableStateOf(0) }
     var navigationProgressFraction by remember { mutableStateOf(0f) }
+
+    var useRealDeviceGps by rememberSaveable { mutableStateOf(false) }
+    var mapActionMode by rememberSaveable { mutableStateOf("ADD_SPOT") } // "ADD_SPOT" or "SET_GPS"
+    val context = LocalContext.current
+    val locationManager = remember { context.getSystemService(Context.LOCATION_SERVICE) as LocationManager }
+    val testingLogs by viewModel.testingLogs.collectAsState()
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[android.Manifest.permission.ACCESS_FINE_LOCATION] ?: false
+        val coarseGranted = permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
+        if (fineGranted || coarseGranted) {
+            useRealDeviceGps = true
+            scope.launch {
+                snackbarHostState.showSnackbar("🛰️ GPS Real Activ! Harta îți va urmări poziția fizică din satelit.")
+            }
+        } else {
+            useRealDeviceGps = false
+            scope.launch {
+                snackbarHostState.showSnackbar("❌ Permisiunea GPS refuzată. Modul Satelit are nevoie de permisiuni.")
+            }
+        }
+    }
+
+    DisposableEffect(useRealDeviceGps) {
+        var listener: android.location.LocationListener? = null
+        if (useRealDeviceGps) {
+            try {
+                val hasFine = androidx.core.content.ContextCompat.checkSelfPermission(
+                    context, android.Manifest.permission.ACCESS_FINE_LOCATION
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                val hasCoarse = androidx.core.content.ContextCompat.checkSelfPermission(
+                    context, android.Manifest.permission.ACCESS_COARSE_LOCATION
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                
+                if (hasFine || hasCoarse) {
+                    val provider = if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                        LocationManager.GPS_PROVIDER
+                    } else {
+                        LocationManager.NETWORK_PROVIDER
+                    }
+                    
+                    val lastKnown = locationManager.getLastKnownLocation(provider)
+                    if (lastKnown != null) {
+                        userGpsLocation = Pair(lastKnown.latitude, lastKnown.longitude)
+                    }
+                    
+                    listener = object : android.location.LocationListener {
+                        override fun onLocationChanged(location: android.location.Location) {
+                            userGpsLocation = Pair(location.latitude, location.longitude)
+                        }
+                        @Deprecated("Deprecated in Java")
+                        override fun onStatusChanged(p0: String?, p1: Int, p2: Bundle?) {}
+                        override fun onProviderEnabled(provider: String) {}
+                        override fun onProviderDisabled(provider: String) {}
+                    }
+                    
+                    locationManager.requestLocationUpdates(
+                        provider,
+                        1000L,
+                        0.5f,
+                        listener
+                    )
+                }
+            } catch (e: SecurityException) {
+                // ignore
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+        onDispose {
+            listener?.let {
+                locationManager.removeUpdates(it)
+            }
+        }
+    }
 
     // Dynamic crawler loop tracking user progress across route segments in real-time
     LaunchedEffect(isSimulatingNavigation, activeNavigationLegIndex, simulationSpeedMultiplier) {
@@ -153,7 +241,7 @@ fun MainScreen(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Planificator de Tranzit Inteligent",
+                                text = if (isEnglishLanguage) "Smart Transit Planner" else "Planificator de Tranzit Inteligent",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -261,23 +349,39 @@ fun MainScreen(
                     lines = lines,
                     journey = optimizedJourney,
                     onMapTap = { lat, lng ->
-                        clickedLat = lat
-                        clickedLng = lng
-                        newSpotName = ""
-                        newSpotDesc = ""
-                        newSpotDuration = "60"
-                        showAddSpotDialog = true
+                        if (mapActionMode == "SET_GPS") {
+                            userGpsLocation = Pair(lat, lng)
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    if (isEnglishLanguage) "🎯 Simulated GPS location moved on map!"
+                                    else "🎯 Locația GPS simulată a fost mutată pe hartă!"
+                                )
+                            }
+                        } else {
+                            clickedLat = lat
+                            clickedLng = lng
+                            newSpotName = ""
+                            newSpotDesc = ""
+                            newSpotDuration = "60"
+                            showAddSpotDialog = true
+                        }
                     },
                     onSpotClick = { spot ->
                         viewModel.toggleSpotSelection(spot.id, !spot.isSelected)
                         scope.launch {
-                            snackbarHostState.showSnackbar("S-a schimbat selectarea pentru: ${spot.name}")
+                            snackbarHostState.showSnackbar(
+                                if (isEnglishLanguage) "Selection changed for: ${translateSpotName(spot.name, true)}"
+                                else "S-a schimbat selectarea pentru: ${spot.name}"
+                            )
                         }
                     },
                     onSetStartSpot = { spot ->
                         viewModel.updateCustomStartSpot(spot.latitude, spot.longitude, spot.name)
                         scope.launch {
-                            snackbarHostState.showSnackbar("Punct de pornire schimbat la: ${spot.name}")
+                            snackbarHostState.showSnackbar(
+                                if (isEnglishLanguage) "Starting point changed to: ${translateSpotName(spot.name, true)}"
+                                else "Punct de pornire schimbat la: ${spot.name}"
+                            )
                         }
                     },
                     onDeleteSpot = { id ->
@@ -295,20 +399,29 @@ fun MainScreen(
                             }
                             userGpsLocation = seedCoords
                             scope.launch {
-                                snackbarHostState.showSnackbar("🛰️ Semnal GPS Activ pe Hartă!")
+                                snackbarHostState.showSnackbar(
+                                    if (isEnglishLanguage) "🛰️ GPS Signal Active on Map!"
+                                    else "🛰️ Semnal GPS Activ pe Hartă!"
+                                )
                             }
                         } else {
                             userGpsLocation = null
                             isSimulatingNavigation = false
                             scope.launch {
-                                snackbarHostState.showSnackbar("Gps Deconectat.")
+                                snackbarHostState.showSnackbar(
+                                    if (isEnglishLanguage) "GPS Disconnected."
+                                    else "Gps Deconectat."
+                                )
                             }
                         }
                     },
                     onUseGpsAsStart = { lat, lng ->
                         viewModel.updateCustomStartSpot(lat, lng, "Locație GPS Ta")
                         scope.launch {
-                            snackbarHostState.showSnackbar("🗺️ Pornire setată din locația ta GPS reală!")
+                            snackbarHostState.showSnackbar(
+                                if (isEnglishLanguage) "🗺️ Start set from your exact GPS location!"
+                                else "🗺️ Pornire setată din locația ta GPS reală!"
+                            )
                         }
                     },
                     isSimulatingNavigation = isSimulatingNavigation,
@@ -328,13 +441,19 @@ fun MainScreen(
                             // completed! Show complete success card by moving index beyond legs
                             activeNavigationLegIndex = legsSize 
                             scope.launch {
-                                snackbarHostState.showSnackbar("🎉 Felicitări! Ai finalizat cu succes întregul traseu!")
+                                snackbarHostState.showSnackbar(
+                                    if (isEnglishLanguage) "🎉 Congratulations! You have successfully completed the entire trip!"
+                                    else "🎉 Felicitări! Ai finalizat cu succes întregul traseu!"
+                                )
                             }
                         } else {
                             activeNavigationLegIndex++
                             navigationProgressFraction = 0f
                             scope.launch {
-                                snackbarHostState.showSnackbar("Etapă finalizată! Se trece la următoarea direcție...")
+                                snackbarHostState.showSnackbar(
+                                    if (isEnglishLanguage) "Stage completed! Moving to the next direction..."
+                                    else "Etapă finalizată! Se trece la următoarea direcție..."
+                                )
                             }
                         }
                     },
@@ -343,12 +462,17 @@ fun MainScreen(
                         activeNavigationLegIndex = 0
                         navigationProgressFraction = 0f
                         scope.launch {
-                            snackbarHostState.showSnackbar("Navigație oprită.")
+                            snackbarHostState.showSnackbar(
+                                if (isEnglishLanguage) "Navigation stopped."
+                                else "Navigație oprită."
+                            )
                         }
                     },
                     isStationsVisible = isStationsVisible,
                     isTransitLinesVisible = isTransitLinesVisible,
-                    mapColorSchemeStyle = mapColorSchemeStyle
+                    mapColorSchemeStyle = mapColorSchemeStyle,
+                    isHighResolutionMap = isHighResolutionMap,
+                    isEnglish = isEnglishLanguage
                 )
                 
                 // Starting place indicator badge overlay on map corners
@@ -367,7 +491,7 @@ fun MainScreen(
                     ) {
                         Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color(0xFFF472B6), modifier = Modifier.size(12.dp))
                         Text(
-                            text = "Pornire: ${start.name}",
+                            text = if (isEnglishLanguage) "Start: ${translateSpotName(start.name, true)}" else "Pornire: ${start.name}",
                             color = Color(0xFFF472B6),
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
@@ -378,16 +502,352 @@ fun MainScreen(
 
             // Dashboard Card with Tabs or Collapsed summary bar
             if (isDashboardVisible) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1.5f)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // Mini summary & Actions Row
+                if (isDashboardExpanded) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1.0f)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            // Mini summary & Actions Row
+                            OptimizedSummaryBar(
+                                city = selectedCity,
+                                journey = optimizedJourney,
+                                onSaveClick = {
+                                    optimizedJourney?.let {
+                                        viewModel.saveCurrentItinerary(it)
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                if (isEnglishLanguage) "The route has been saved offline!" 
+                                                else "Traseul a fost salvat offline!"
+                                            )
+                                        }
+                                    }
+                                },
+                                isCollapsed = false,
+                                onToggleDashboard = { isDashboardExpanded = false },
+                                isSimulatingNavigation = isSimulatingNavigation,
+                                onStartSimulationClick = {
+                                    if (userGpsLocation == null) {
+                                        val seedCoords = when (selectedCity) {
+                                            "București" -> Pair(44.4411, 26.0973)
+                                            "Brașov" -> Pair(45.6540, 25.6030)
+                                            else -> Pair(46.7684, 23.5862)
+                                        }
+                                        userGpsLocation = seedCoords
+                                    }
+                                    isSimulatingNavigation = true
+                                    activeNavigationLegIndex = 0
+                                    navigationProgressFraction = 0f
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            if (isEnglishLanguage) "🚀 Route guidance started! Follow the map." 
+                                            else "🚀 Ghidajul traseului a pornit! Urmărește harta."
+                                        )
+                                    }
+                                },
+                                onStopSimulationClick = {
+                                    isSimulatingNavigation = false
+                                    activeNavigationLegIndex = 0
+                                    navigationProgressFraction = 0f
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            if (isEnglishLanguage) "Guidance stopped." 
+                                            else "Ghidaj oprit."
+                                        )
+                                    }
+                                },
+                                onHideCompletely = { isDashboardVisible = false },
+                                isEnglish = isEnglishLanguage
+                            )
+
+                            // Tab Row
+                            TabRow(
+                                selectedTabIndex = selectedDashboardTab,
+                                containerColor = Color.Transparent,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Tab(
+                                    selected = selectedDashboardTab == 0,
+                                    onClick = { selectedDashboardTab = 0 },
+                                    modifier = Modifier.testTag("tab_spots_checklist")
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center,
+                                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.List,
+                                            contentDescription = null,
+                                            tint = if (selectedDashboardTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (isEnglishLanguage) "Attractions" else "Atracții",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (selectedDashboardTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                Tab(
+                                    selected = selectedDashboardTab == 1,
+                                    onClick = { selectedDashboardTab = 1 },
+                                    modifier = Modifier.testTag("tab_itinerary_timeline")
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center,
+                                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.DateRange,
+                                            contentDescription = null,
+                                            tint = if (selectedDashboardTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (isEnglishLanguage) "Itinerary" else "Itinerar",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (selectedDashboardTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                Tab(
+                                    selected = selectedDashboardTab == 2,
+                                    onClick = { selectedDashboardTab = 2 },
+                                    modifier = Modifier.testTag("tab_live_testing")
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center,
+                                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = if (selectedDashboardTab == 2) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (isEnglishLanguage) "Testing" else "Testare",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (selectedDashboardTab == 2) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                Tab(
+                                    selected = selectedDashboardTab == 3,
+                                    onClick = { selectedDashboardTab = 3 },
+                                    modifier = Modifier.testTag("tab_ai_guide")
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center,
+                                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Star,
+                                            contentDescription = null,
+                                            tint = if (selectedDashboardTab == 3) Color(0xFFEAB308) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (isEnglishLanguage) "AI Guide" else "Ghid AI",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (selectedDashboardTab == 3) Color(0xFFEAB308) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                Tab(
+                                    selected = selectedDashboardTab == 4,
+                                    onClick = { selectedDashboardTab = 4 },
+                                    modifier = Modifier.testTag("tab_saved_itineraries")
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center,
+                                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Favorite,
+                                            contentDescription = null,
+                                            tint = if (selectedDashboardTab == 4) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (isEnglishLanguage) "Saved" else "Salvate",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (selectedDashboardTab == 4) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+
+                            HorizontalDivider()
+
+                            // Tab Contents Switching
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                            ) {
+                                AnimatedContent(
+                                    targetState = selectedDashboardTab,
+                                    transitionSpec = {
+                                        if (targetState > initialState) {
+                                            (slideInHorizontally { width -> width } + fadeIn()) togetherWith 
+                                                    (slideOutHorizontally { width -> -width } + fadeOut())
+                                        } else {
+                                            (slideInHorizontally { width -> -width } + fadeIn()) togetherWith 
+                                                    (slideOutHorizontally { width -> width } + fadeOut())
+                                        }.using(
+                                            SizeTransform(clip = false)
+                                        )
+                                    },
+                                    label = "TabTransition",
+                                    modifier = Modifier.fillMaxSize()
+                                ) { targetTab ->
+                                    when (targetTab) {
+                                        0 -> SpotsChecklistTab(
+                                            city = selectedCity,
+                                            spots = citySpots,
+                                            customStartSpot = customStartSpot,
+                                            onToggle = { id, selected -> viewModel.toggleSpotSelection(id, selected) },
+                                            onDeselectAll = { viewModel.deselectAllSpots() },
+                                            onDelete = { id -> viewModel.deleteSpot(id) },
+                                            onClearCustom = { viewModel.clearAllCustomCurrentCity() },
+                                            onSetStartClick = { spot ->
+                                                viewModel.updateCustomStartSpot(spot.latitude, spot.longitude, spot.name)
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        if (isEnglishLanguage) "Starting point changed to: ${spot.name}"
+                                                        else "Punct de pornire schimbat la: ${spot.name}"
+                                                    )
+                                                }
+                                            },
+                                            isEnglish = isEnglishLanguage,
+                                            weather = currentWeather,
+                                            selectedPreset = selectedWeatherPreset,
+                                            onSelectPreset = { preset -> viewModel.setWeatherPreset(preset) }
+                                        )
+                                        1 -> TimelineTab(isEnglish = isEnglishLanguage,
+                                            journey = optimizedJourney,
+                                            startLabel = customStartSpot?.let { it.translate(isEnglishLanguage).name } ?: TransitNetwork.getStartSpot(selectedCity).translate(isEnglishLanguage).name,
+                                            startHour = "09:00",
+                                            city = selectedCity,
+                                            isSimulatingNavigation = isSimulatingNavigation,
+                                            onStartSimulationClick = {
+                                                if (userGpsLocation == null) {
+                                                    // Auto-enable GPS to initial position when starting routing simulation
+                                                    val seedCoords = when (selectedCity) {
+                                                        "București" -> Pair(44.4411, 26.0973)
+                                                        "Brașov" -> Pair(45.6540, 25.6030)
+                                                        else -> Pair(46.7684, 23.5862)
+                                                    }
+                                                    userGpsLocation = seedCoords
+                                                }
+                                                isSimulatingNavigation = true
+                                                activeNavigationLegIndex = 0
+                                                navigationProgressFraction = 0f
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        if (isEnglishLanguage) "🚀 Route guidance started! Follow the map." 
+                                                        else "🚀 Ghidajul traseului a pornit! Urmărește harta."
+                                                    )
+                                                }
+                                            },
+                                            onStopSimulationClick = {
+                                                isSimulatingNavigation = false
+                                                activeNavigationLegIndex = 0
+                                                navigationProgressFraction = 0f
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        if (isEnglishLanguage) "Guidance stopped." 
+                                                        else "Ghidaj oprit."
+                                                    )
+                                                }
+                                            }
+                                        )
+                                        2 -> LiveTestingTab(
+                                            isEnglish = isEnglishLanguage,
+                                            city = selectedCity,
+                                            journey = optimizedJourney,
+                                            testingLogs = testingLogs,
+                                            useRealDeviceGps = useRealDeviceGps,
+                                            onToggleRealGps = { enabled ->
+                                                if (enabled) {
+                                                    locationPermissionLauncher.launch(
+                                                        arrayOf(
+                                                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                                            android.Manifest.permission.ACCESS_COARSE_LOCATION
+                                                        )
+                                                     )
+                                                } else {
+                                                    useRealDeviceGps = false
+                                                }
+                                            },
+                                            mapActionMode = mapActionMode,
+                                            onSetMapActionMode = { mode -> mapActionMode = mode },
+                                            onSaveLog = { placeName, note, observerName ->
+                                                viewModel.addTestingLog(placeName, note, observerName)
+                                            },
+                                            onDeleteLog = { id ->
+                                                viewModel.deleteTestingLog(id)
+                                            },
+                                            onClearLogs = {
+                                                viewModel.clearAllTestingLogsCurrentCity()
+                                            }
+                                        )
+                                        3 -> AiGuideTab(
+                                            recommendationText = aiRecommendation,
+                                            isLoading = isAiLoading,
+                                            onCallAi = { viewModel.askGeminiForItinerary(isEnglishLanguage) },
+                                            isEnglish = isEnglishLanguage
+                                        )
+                                        4 -> SavedItinerariesTab(
+                                            isEnglish = isEnglishLanguage,
+                                            itineraries = savedItineraries,
+                                            onDelete = { id -> viewModel.deleteSavedItinerary(id) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Collapsed State: Show only the compact OptimizedSummaryBar to keep route stats and Save flow accessible, while maximizing Map space
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+                    ) {
                         OptimizedSummaryBar(
                             city = selectedCity,
                             journey = optimizedJourney,
@@ -395,13 +855,18 @@ fun MainScreen(
                                 optimizedJourney?.let {
                                     viewModel.saveCurrentItinerary(it)
                                     scope.launch {
-                                        snackbarHostState.showSnackbar("Traseul a fost salvat offline!")
+                                        snackbarHostState.showSnackbar(
+                                            if (isEnglishLanguage) "The route has been saved offline!" 
+                                            else "Traseul a fost salvat offline!"
+                                        )
                                     }
                                 }
                             },
-                            isCollapsed = false,
-                            onToggleDashboard = { isDashboardVisible = !isDashboardVisible },
+                            isCollapsed = true,
+                            onToggleDashboard = { isDashboardExpanded = true },
+                            onHideCompletely = { isDashboardVisible = false },
                             isSimulatingNavigation = isSimulatingNavigation,
+                            isEnglish = isEnglishLanguage,
                             onStartSimulationClick = {
                                 if (userGpsLocation == null) {
                                     val seedCoords = when (selectedCity) {
@@ -415,7 +880,7 @@ fun MainScreen(
                                 activeNavigationLegIndex = 0
                                 navigationProgressFraction = 0f
                                 scope.launch {
-                                    snackbarHostState.showSnackbar("🚀 Ghidajul traseului a pornit! Urmărește harta.")
+                                    snackbarHostState.showSnackbar(if (isEnglishLanguage) "🚀 Route guidance started! Follow the map." else "🚀 Ghidajul traseului a pornit! Urmărește harta.")
                                 }
                             },
                             onStopSimulationClick = {
@@ -423,261 +888,11 @@ fun MainScreen(
                                 activeNavigationLegIndex = 0
                                 navigationProgressFraction = 0f
                                 scope.launch {
-                                    snackbarHostState.showSnackbar("Ghidaj oprit.")
+                                    snackbarHostState.showSnackbar(if (isEnglishLanguage) "Guidance stopped." else "Ghidaj oprit.")
                                 }
                             }
                         )
-
-                        // Tab Row
-                        TabRow(
-                            selectedTabIndex = selectedDashboardTab,
-                            containerColor = Color.Transparent,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Tab(
-                                selected = selectedDashboardTab == 0,
-                                onClick = { selectedDashboardTab = 0 },
-                                modifier = Modifier.testTag("tab_spots_checklist")
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center,
-                                    modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.List,
-                                        contentDescription = null,
-                                        tint = if (selectedDashboardTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Atracții",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (selectedDashboardTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                            Tab(
-                                selected = selectedDashboardTab == 1,
-                                onClick = { selectedDashboardTab = 1 },
-                                modifier = Modifier.testTag("tab_itinerary_timeline")
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center,
-                                    modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.DateRange,
-                                        contentDescription = null,
-                                        tint = if (selectedDashboardTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Itinerar",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (selectedDashboardTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                            Tab(
-                                selected = selectedDashboardTab == 2,
-                                onClick = { selectedDashboardTab = 2 },
-                                modifier = Modifier.testTag("tab_ai_guide")
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center,
-                                    modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Star,
-                                        contentDescription = null,
-                                        tint = if (selectedDashboardTab == 2) Color(0xFFEAB308) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Ghid AI",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (selectedDashboardTab == 2) Color(0xFFEAB308) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                            Tab(
-                                selected = selectedDashboardTab == 3,
-                                onClick = { selectedDashboardTab = 3 },
-                                modifier = Modifier.testTag("tab_saved_itineraries")
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center,
-                                    modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Favorite,
-                                        contentDescription = null,
-                                        tint = if (selectedDashboardTab == 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Salvate",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (selectedDashboardTab == 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-
-                        HorizontalDivider()
-
-                        // Tab Contents Switching
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                        ) {
-                            AnimatedContent(
-                                targetState = selectedDashboardTab,
-                                transitionSpec = {
-                                    if (targetState > initialState) {
-                                        (slideInHorizontally { width -> width } + fadeIn()) togetherWith 
-                                                (slideOutHorizontally { width -> -width } + fadeOut())
-                                    } else {
-                                        (slideInHorizontally { width -> -width } + fadeIn()) togetherWith 
-                                                (slideOutHorizontally { width -> width } + fadeOut())
-                                    }.using(
-                                        SizeTransform(clip = false)
-                                    )
-                                },
-                                label = "TabTransition",
-                                modifier = Modifier.fillMaxSize()
-                            ) { targetTab ->
-                                when (targetTab) {
-                                    0 -> SpotsChecklistTab(
-                                        city = selectedCity,
-                                        spots = citySpots,
-                                        customStartSpot = customStartSpot,
-                                        onToggle = { id, selected -> viewModel.toggleSpotSelection(id, selected) },
-                                        onDelete = { id -> viewModel.deleteSpot(id) },
-                                        onClearCustom = { viewModel.clearAllCustomCurrentCity() },
-                                        onSetStartClick = { spot ->
-                                            viewModel.updateCustomStartSpot(spot.latitude, spot.longitude, spot.name)
-                                            scope.launch {
-                                                snackbarHostState.showSnackbar("Punct de pornire schimbat la: ${spot.name}")
-                                            }
-                                        }
-                                    )
-                                    1 -> TimelineTab(
-                                        journey = optimizedJourney,
-                                        startLabel = customStartSpot?.name ?: TransitNetwork.getStartSpot(selectedCity).name,
-                                        startHour = "09:00",
-                                        city = selectedCity,
-                                        isSimulatingNavigation = isSimulatingNavigation,
-                                        onStartSimulationClick = {
-                                            if (userGpsLocation == null) {
-                                                // Auto-enable GPS to initial position when starting routing simulation
-                                                val seedCoords = when (selectedCity) {
-                                                    "București" -> Pair(44.4411, 26.0973)
-                                                    "Brașov" -> Pair(45.6540, 25.6030)
-                                                    else -> Pair(46.7684, 23.5862)
-                                                }
-                                                userGpsLocation = seedCoords
-                                            }
-                                            isSimulatingNavigation = true
-                                            activeNavigationLegIndex = 0
-                                            navigationProgressFraction = 0f
-                                            scope.launch {
-                                                snackbarHostState.showSnackbar("🚀 Ghidajul traseului a pornit! Urmărește harta.")
-                                            }
-                                        },
-                                        onStopSimulationClick = {
-                                            isSimulatingNavigation = false
-                                            activeNavigationLegIndex = 0
-                                            navigationProgressFraction = 0f
-                                            scope.launch {
-                                                snackbarHostState.showSnackbar("Ghidaj oprit.")
-                                            }
-                                        }
-                                    )
-                                    2 -> AiGuideTab(
-                                        recommendationText = aiRecommendation,
-                                        isLoading = isAiLoading,
-                                        onCallAi = { viewModel.askGeminiForItinerary() }
-                                    )
-                                    3 -> SavedItinerariesTab(
-                                        itineraries = savedItineraries,
-                                        onDelete = { id -> viewModel.deleteSavedItinerary(id) }
-                                    )
-                                }
-                            }
-                        }
                     }
-                }
-            } else {
-                // Collapsed State: Show only the compact OptimizedSummaryBar to keep route stats and Save flow accessible, while maximizing Map space
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
-                ) {
-                    OptimizedSummaryBar(
-                        city = selectedCity,
-                        journey = optimizedJourney,
-                        onSaveClick = {
-                            optimizedJourney?.let {
-                                viewModel.saveCurrentItinerary(it)
-                                scope.launch {
-                                    snackbarHostState.showSnackbar("Traseul a fost salvat offline!")
-                                }
-                            }
-                        },
-                        isCollapsed = true,
-                        onToggleDashboard = { isDashboardVisible = !isDashboardVisible },
-                        isSimulatingNavigation = isSimulatingNavigation,
-                        onStartSimulationClick = {
-                            if (userGpsLocation == null) {
-                                val seedCoords = when (selectedCity) {
-                                    "București" -> Pair(44.4411, 26.0973)
-                                    "Brașov" -> Pair(45.6540, 25.6030)
-                                    else -> Pair(46.7684, 23.5862)
-                                }
-                                userGpsLocation = seedCoords
-                            }
-                            isSimulatingNavigation = true
-                            activeNavigationLegIndex = 0
-                            navigationProgressFraction = 0f
-                            scope.launch {
-                                snackbarHostState.showSnackbar("🚀 Ghidajul traseului a pornit! Urmărește harta.")
-                            }
-                        },
-                        onStopSimulationClick = {
-                            isSimulatingNavigation = false
-                            activeNavigationLegIndex = 0
-                            navigationProgressFraction = 0f
-                            scope.launch {
-                                snackbarHostState.showSnackbar("Ghidaj oprit.")
-                            }
-                        }
-                    )
                 }
             }
         }
@@ -792,11 +1007,277 @@ fun MainScreen(
         onSimulationSpeedChange = { simulationSpeedMultiplier = it },
         mapColorScheme = mapColorSchemeStyle,
         onMapColorSchemeChange = { mapColorSchemeStyle = it },
+        isHighResolution = isHighResolutionMap,
+        onHighResolutionToggle = { isHighResolutionMap = it },
         isSoundEnabled = isSoundAlertEnabled,
         onSoundEnabledToggle = { isSoundAlertEnabled = it },
         isEnglish = isEnglishLanguage,
         onLanguageToggle = { isEnglishLanguage = it }
     )
+}
+
+// --- Dynamic Optimization UI Localization Helpers ---
+
+fun translateSpotName(name: String, isEnglish: Boolean): String {
+    if (!isEnglish) return name
+    return when (name) {
+        // Bucharest starting point
+        "Gara de Nord (Hotel/Start)" -> "North Stream Station (Hotel/Start)"
+        "Gara de Nord" -> "North Station"
+        "Palatul Parlamentului" -> "Palace of the Parliament"
+        "Centrul Vechi" -> "Old Town"
+        "Ateneul Român" -> "Romanian Athenaeum"
+        "Parcul Herăstrău (Mihai I)" -> "Herăstrău Park (Mihai I)"
+        "Arcul de Triumf" -> "Triumph Arch"
+        "Muzeul Național al Satului" -> "National Village Museum"
+        "Parcul Cișmigiu" -> "Cișmigiu Gardens"
+        "Muzeul Național Grigore Antipa" -> "Grigore Antipa Natural History Museum"
+        "Cărturești Carusel" -> "Cărturești Carusel Bookstore"
+        "Biserica Stavropoleos" -> "Stavropoleos Church"
+        "Muzeul de Artă al României" -> "National Museum of Art"
+        "Grădina Botanică Dimitrie Brândză" -> "Botanical Garden"
+        "Parcul Carol I" -> "Carol I Park"
+        "Palatul Primăverii" -> "Spring Palace"
+        "Piața Revoluției" -> "Revolution Square"
+        "Hanul lui Manuc" -> "Manuc's Inn"
+        "Muzeul Național de Istorie a României" -> "National History Museum"
+        "Palatul Cotroceni" -> "Cotroceni Palace"
+        "Parcul Tineretului" -> "Tineretului Park"
+        "Catedrala Mântuirii Neamului" -> "People's Salvation Cathedral"
+        "Parcul Drumul Taberei" -> "Drumul Taberei Park"
+        "Palatul Mogoșoaia" -> "Mogoșoaia Palace"
+        "Muzeul de Artă Contemporană (MNAC)" -> "National Museum of Contemporary Art"
+        "Piața Universității" -> "University Square"
+        "Opera Națională București" -> "Bucharest National Opera"
+
+        // Cluj starting point & presets
+        "Gara Cluj-Napoca (Hotel/Start)" -> "Cluj-Napoca Railway Station (Hotel/Start)"
+        "Gara Cluj-Napoca" -> "Cluj-Napoca Railway Station"
+        "Grădina Botanică Alexandru Borza" -> "Botanical Garden"
+        "Parcul Central Simion Bărnuțiu" -> "Central Park Simion Bărnuțiu"
+        "Piața Unirii & Biserica Sf. Mihail" -> "Union Square & St. Michael Church"
+        "Catedrala Mitropolitană & Piața Avram Iancu" -> "Metropolitan Cathedral & Avram Iancu Square"
+        "Dealul Cetățuia" -> "Cetățuia Hill"
+        "Muzeul de Artă & Palatul Bánffy" -> "Art Museum & Bánffy Palace"
+        "Parcul Romulus Vuia (Etnografic)" -> "Romulus Vuia Ethnographic Park"
+        "Bastionul Croitorilor" -> "Tailors' Tower"
+        "Parcul Iulius (Lacul Gheorgheni)" -> "Iulius Park (Gheorgheni Lake)"
+        "Piața Muzeului" -> "Museum Square"
+        "Pădurea Hoia-Baciu" -> "Hoia-Baciu Haunted Forest"
+        "The Office Cluj & Podul de Fier" -> "The Office Cluj & The Iron Bridge"
+        "Teatrul Național și Opera Română" -> "National Theatre and Romanian Opera"
+        "Turnul Pompierilor" -> "Firemen's Tower"
+        "Parcul Cetățuia Buburuza" -> "Buburuza Cetățuia Park"
+        "Muzeul Național de Istorie a Transilvaniei" -> "National History Museum of Transylvania"
+        "Biserica Reformată de pe ulița Lupilor" -> "Reformed Church on Wolves' Street"
+        "Cluj Arena" -> "Cluj Arena Stadium"
+        "BT Arena (Sala Polivalentă)" -> "BT Arena Multi-purpose Hall"
+        "Parcul Rozelor" -> "Rose Park"
+        "Biserica Calvaria (Mănăștur)" -> "Calvaria Church (Mănăștur)"
+        "Catedrala Greco-Catolică Sf. Iosif (Cipariu)" -> "St. Joseph Greek-Catholic Cathedral"
+        "Observatorul Astronomic" -> "Astronomical Observatory"
+        "Campusul Istoric USAMV" -> "Historical USAMV Campus"
+        "Cetatea Fetei Florești" -> "Cetatea Fetei Florești (Hiking Spot)"
+
+        // Brasov starting point & presets
+        "Gara Brașov (Hotel/Start)" -> "Brașov Railway Station (Hotel/Start)"
+        "Gara Brașov" -> "Brașov Railway Station"
+        "Biserica Neagră" -> "The Black Church"
+        "Piața Sfatului" -> "Council Square"
+        "Telecabina Tâmpa" -> "Tâmpa Cable Car"
+        "Turnul Alb" -> "The White Tower"
+        "Poarta Șchei" -> "Șchei Gate"
+        "Turnul Negru" -> "The Black Tower"
+        "Bastionul Țesătorilor" -> "Weavers' Bastion"
+        "Strada Sforii" -> "Rope Street"
+        "Prima Școală Românească" -> "First Romanian School"
+        "Poarta Ecaterinei" -> "Catherine's Gate"
+        "Parcul Central Nicolae Titulescu" -> "Nicolae Titulescu Central Park"
+        "Bastionul Graft" -> "Graft Bastion"
+        "Muzeul de Artă Brașov" -> "Brașov Art Museum"
+        "Pietrele lui Solomon" -> "Solomon's Rocks"
+        "Cetățuia de pe Strajă" -> "The Citadel on Strajă Hill"
+        "Turnul Măcelarilor" -> "Butchers' Tower"
+        "Bastionul Cojocarilor" -> "Furriers' Bastion"
+        "Sinagoga Neologă din Brașov" -> "Neologue Synagogue of Brașov"
+        "Casa Sfatului (Muzeul de Istorie)" -> "Council House (History Museum)"
+        "Biserica Sfântul Nicolae" -> "St. Nicholas Church"
+        "Promenada de sub Tâmpa" -> "Promenade under Tâmpa Mountain"
+        "Turnul Lemnarilor" -> "Woodworkers' Tower"
+        "Cartierul Istoric Șchei" -> "Șchei Historical Quarter"
+        "Grădina Zoologică Brașov (Noua)" -> "Brașov Zoo (Noua)"
+        "Lacul Noua & Parc Agrement" -> "Noua Lake & Leisure Park"
+
+        else -> name
+    }
+}
+
+fun translateSpotDescription(description: String, isEnglish: Boolean): String {
+    if (!isEnglish) return description
+    return when (description) {
+        "Punctul de pornire al călătoriei." -> "The starting point of your custom tour."
+        "Una dintre cele mai mari clădiri administrative din lume." -> "One of the largest administrative buildings in the world."
+        "Inima istorică a Bucureștiului, plină de viață și clădiri de epocă." -> "The historical heart of Bucharest, bursting with life and old buildings."
+        "O bijuterie arhitecturală de importanță istorică națională." -> "An architectural treasure of national historical importance."
+        "Un parc uriaș, liniștit, situat în jurul unui lac superb." -> "A massive, peaceful park arranged around a pristine lake."
+        "Monumentul care celebrează victoria României în Primul Război Mondial." -> "The monument celebrating Romania's victory in World War I."
+        "O incursiune în viața rurală tradițională românească în aer liber." -> "An open-air museum exploration of traditional Romanian village life."
+        "Cea mai veche grădină publică din București, un lac romantic și alei liniștite." -> "The oldest public garden in Bucharest, featuring a romantic lake and quiet alleys."
+        "Expoziții interactive de zoologie, biodiversitate și fosile de dinozaur." -> "Interactive exhibitions of zoology, biodiversity, and dinosaur fossils."
+        "Una dintre cele mai spectaculoase librării din lume, situată în Centrul Vechi." -> "One of the most spectacular bookshops in the world, in the Old Town."
+        "O capodoperă a stilului brâncovenesc, faimoasă pentru curtea sa interioară." -> "A masterpiece of Brâncovenesc style, famous for its interior courtyard."
+        "Fostul Palat Regal găzduiește colecții remarcabile de artă românească." -> "The former Royal Palace, hosting remarkable collections of Romanian art."
+        "Oaze de verdeață, sere exotice tropicale și mii de specii de plante în Cotroceni." -> "A green oasis with exotic tropical greenhouses and thousands of plant species in Cotroceni."
+        "Parc istoric frumos cu Mausoleul impunător și fântâni elegante." -> "Beautiful historical park with a majestic Mausoleum and elegant fountains."
+        "Fostul palat luxos de protocol al soților Nicolae și Elena Ceaușescu." -> "The former luxurious private residence of Nicolae and Elena Ceaușescu."
+        "Piața istorică centrală cu Memorialul Renașterii și clădiri celebre." -> "The central historical square with the Memorial of Rebirth."
+        "Cel mai vechi han funcțional din Europa, oferind o ambianță tradițională excelentă." -> "The oldest active inn in Europe, offering an excellent traditional Romanian vibe."
+        "Exponate arheologice și istorice inestimabile, incluzând Tezaurul istoric național." -> "Invaluable archaeological and historical exhibits, including the national Treasury."
+        "Reședința oficială a Președintelui și un muzeu istoric de o rară frumusețe." -> "The official Presidential residence and a historic museum of rare beauty."
+        "Un parc modern imens cu lac de agrement, piste și un ambient extrem de relaxant." -> "A massive modern park with a recreational lake, tracks, and relaxing ambiance."
+        "Cea mai mare catedrală ortodoxă din lume, o structură arhitecturală colosală." -> "The largest Orthodox Cathedral in the world, a colossal architectural masterwork."
+        "Cunoscut și ca Parcul Moghioroș, revitalizat cu poduri cochete și sere moderne." -> "Also known as Moghioroș Park, revitalized with chic bridges and modern greenhouses."
+        "O clădire istorică în stil brâncovenesc deosebit, situată în exteriorul orașului." -> "A beautiful brâncovenesc-style castle situated just outside the city."
+        "Situat în aripa din spate a Palatului Parlamentului, cu expoziții avangardiste." -> "Located in the back wing of the Palace of the Parliament, featuring avant-garde exhibitions."
+        "Kilometrul zero al democrației bucureștene, încadrat de clădiri universitare emblematice." -> "The landmark of Romanian democracy, surrounded by iconic university buildings."
+        "Clădire istorică neoclasică, faimos centru de cultura pentru spectacole lirice și balet." -> "A historic neoclassical building, a famous cultural venue for opera and ballet."
+
+        // Cluj descriptions
+        "Oază magnifică de verdeață ce adăpostește plante rare și o grădină japoneză." -> "A magnificent green oasis sheltering rare plants and a Japanese garden."
+        "Parcul istoric central cu un lac superb de plimbări cu barca și Casino." -> "The historic central park with a boating lake and the Casino building."
+        "Piața istorică principală delimitată de monumentala catedrală gotică." -> "The main historical square dominated by the monumental Gothic Cathedral."
+        "Catedrală ortodoxă impunătoare și piațetă cu fântâni arteziene animate." -> "An imposing Orthodox Cathedral and public square with animated artesian fountains."
+        "O panoramă spectaculaosă a întregului oraș, ideală la apus de soare." -> "A spectacular panoramic view of the entire city, ideal at sunset."
+        "O panoramă spectaculoasă a întregului oraș, ideală la apus de soare." -> "A spectacular panoramic view of the entire city, ideal at sunset."
+        "Palat baroc splendid ce găzduiește colecții naționale valoroase de artă." -> "A splendid baroque palace hosting valuable national art collections."
+        "Primul muzeu în aer liber din România cu gospodării tradiționale transilvănene." -> "Romania's first open-air museum featuring historic Transylvanian homesteads."
+        "Unul dintre puțele turnuri de apărare care s-au păstrat intacte din vechea cetate." -> "One of the few defensive towers preserved intact from the old citadel."
+        "Zonă modernă de recreere în jurul lacului, plină de spații verzi și pontoane." -> "A modern lakeside recreation area filled with green spaces and boardwalks."
+        "Cea mai veche piață din Cluj-Napoca, flancată de Biserica Franciscană." -> "The oldest square in Cluj-Napoca, flanked by the elegant Franciscan Church."
+        "Pădurea faimoasă la nivel mondial pentru peisajele sale misterioase și legende." -> "The world-famous forest known for its mysterious landscapes and legends."
+        "O zonă modernă vibrantă, îmbinând arhitectura de birouri cu malul Someșului." -> "A vibrant modern area combining office development with the Someș riverfront."
+        "Clădire neobarocă superbă destinată spectacolelor lirice și teatrale." -> "A superb neo-baroque building designed for opera and theatrical performances."
+        "Turn istoric reabilitat recent cu o platformă panoramică superbă." -> "A newly rehabilitated historical tower with a magnificent panoramic platform."
+        "Zonă adiacentă cetățuii cu alei umbroase, spații de joacă și belvedere retras." -> "Area near Cetățuia with shaded alleys, playgrounds, and cozy viewpoints."
+        "Colecții arheologice valoroase despre istoria antică, romană și medievală a Transilvaniei." -> "Valuable archaeological collections about the ancient, Roman, and medieval history of Transylvania."
+        "O clădire monument istoric gotic de tip sală, una dintre cele mai vaste din Europa de Est." -> "A historic monumental Gothic hall church, one of the largest in Eastern Europe."
+        "Cel mai modern stadion multifuncțional din inima Transilvaniei, cu o arhitectură high-tech." -> "The most modern multi-use stadium in the heart of Transylvania, featuring high-tech architecture."
+        "Cea mai mare sală polivalentă din România, găzduiește concerte mari și evenimente sportive." -> "The largest multi-purpose arena in Romania, hosting major concerts and sports events."
+        "Parc renumit pentru sutele de soiuri de trandafiri și faleza liniștită pe malul Someșului." -> "A park famous for hundreds of rose varieties and a peaceful Someș riverfront path."
+        "O veche mănăstire benedictină fortificată, fiind una dintre cele mai bătrâne biserici din Cluj." -> "An ancient fortified Benedictine monastery, one of the oldest standing churches in Cluj."
+        "Catedrală monumentală cu design modern magnific, aflată în Piața Cipariu." -> "A monumental cathedral with a magnificent modern design, located in Cipariu Square."
+        "Situat în campusul USAMV, ideal pentru explorarea stelelor și activități educaționale." -> "Located on the USAMV campus, ideal for star-gazing and educational outreach."
+        "Grădini, livezi istorice și oază verde extinsă în una dintre faimoasele universități clujene." -> "Gardens, orchards, and an expansive green sanctuary inside USAMV University."
+        "Loc istoric plin de mister situat pe deal, înconjurat de pădure, ideal pentru drumeții." -> "A mysterious historical site situated on a hill, surrounded by forest, ideal for hiking."
+
+        // Brasov descriptions
+        "Cea mai mare biserică gotică din sud-estul Europei." -> "The largest Gothic church in Southeastern Europe."
+        "Piața istorică principală din Brașov, plină de farmec și cafenele." -> "The main historical square in Brașov, filled with charm and cozy cafes."
+        "Telecabina spre muntele Tâmpa cu panoramă excelentă a orașului." -> "The cable car climbing Tâmpa Mountain, offering scenic panoramic city views."
+        "Turn istoric de apărare oferind o vedere spectaculoasă la înălțime." -> "A historic defense tower providing spectacular aerial views from the hill."
+        "Poartă barocă superbă ce duce spre vechiul cartier românesc." -> "A beautiful baroque gate leading into the historic Romanian quarter Schei."
+        "Turn de strajă din secolul al XV-lea cu vedere panoramică spre Biserica Neagră." -> "A 15th-century defense tower with panoramic views looking towards the Black Church."
+        "Unul dintre cele mai bine conservate bastioane medievale, adăpostind o machetă rară." -> "One of the best-preserved medieval bastions, hosting a rare scale model."
+        "Una dintre cele mai înguste străzi din Europa, un reper fotografic iconic." -> "One of the narrowest alleys in Europe, a truly iconic photo landmark."
+        "Situată în Șchei, locul unde s-au tipărit primele cărți în limba română." -> "Located in Șchei, the historic cradle where the first Romanian books were printed."
+        "Singura poartă medievală de acces în cetate păstrată în forma sa originală." -> "The only medieval city entry gate surviving fully in its original form."
+        "Un park mare și liniștit în centrul orașului cu alei largi și fântâni." -> "A large and tranquil park in the city center with wide paths and fountains."
+        "Bastion fortificat pitoresc deasupra pârâului Graft, legat de Turnul Alb." -> "A picturesque fortified bastion over Graft creek, linked physically to the White Tower."
+        "Expoziție de pictură și sculptură românească valoroasă, aproape de primărie." -> "A rich collection of valuable Romanian paintings and sculptures near City Hall."
+        "Zonă naturală de chei spectaculoase cu spații verzi pentru recreere." -> "A spectacular natural gorge area with lush green spaces for picnics."
+        "Fortăreață istorică pe dealul Strajă, monument istoric de importanță națională." -> "A hilltop citadel on Strajă hill, a national historical heritage site."
+        "Turn vechi de apărare din secolul al XV-lea, parte integrantă din fortificații." -> "An ancient 15th-century defense tower, integral to the old town walls."
+        "Bastion istoric ridicat pe latura de sud a cetății sub muntele Tâmpa." -> "A historic bastion erected on the southern walls right under Tâmpa Mountain."
+        "O clădire religioasă splendidă în stil bizantin, cu detalii decorative fermecătoare." -> "A splendid Religious monument designed in Byzantine style with charming decor."
+        "Simbolul central al orașului Brașov, fostul sediu administrativ medieval." -> "The central symbol of Brașov, formerly the medieval administrative headquarters."
+        "O biserică orthodoxă impunătoare din Șchei, fondată în secolul al XIII-lea." -> "An imposing Orthodox Church in Șchei, with foundations from the 13th century."
+        "Aleea pietonală umbroasă Tiberiu Brediceanu, perfectă pentru plimbări relaxante pe sub pădure." -> "The shaded pedestrian alley under Tâmpa, perfect for relaxing forest walks."
+        "Turnul Lemnarilor" -> "The Woodworkers' Tower"
+        "Turnul Lemnarilor, găzduiește expoziții de sculptură și ateliere de artă." -> "The Woodworkers' Tower, showcasing woodcarving exhibits and art workshops."
+        "Turn istoric restaurat cochet, găzduiește expoziții de sculptură și ateliere de artă." -> "A beautifully restored historic tower, hosting sculpture exhibits and art workshops."
+        "Explorare pe străduțele vechi și întortocheate, inima spiritului românesc brașovean." -> "An exploration of winding old cobblestone streets, the cradle of Romanian heritage."
+        "Una dintre cele mai moderne grădini zoologice din țară, amplasată în pădurea Noua." -> "One of the country's most modern zoos, nestling beautifully in Noua Forest."
+        "Zonă superbă de relaxare cu bărci, pontoane, terenuri de sport și un aer minunat de munte." -> "A stellar lakeside park with rental boats, sports grounds, and pure mountain air."
+        else -> description
+    }
+}
+
+fun TouristSpot.translate(isEnglish: Boolean): TouristSpot {
+    return this.copy(
+        name = translateSpotName(this.name, isEnglish),
+        description = translateSpotDescription(this.description, isEnglish)
+    )
+}
+
+fun translateDirections(directions: String, isEnglish: Boolean): String {
+    if (!isEnglish) return directions
+    return directions
+        .replace("Plimbare pe jos", "Walk")
+        .replace("plimbare pe jos", "walk on foot")
+        .replace("plimbare", "walk")
+        .replace("pe jos", "on foot")
+        .replace("până la", "until")
+        .replace("către", "towards")
+        .replace("de la", "from")
+        .replace("la", "at")
+        .replace("stânga", "left")
+        .replace("dreapta", "right")
+        .replace("mergi", "go")
+        .replace("Mergi", "Go")
+        .replace("Ia autobuzul", "Take bus")
+        .replace("Ia troleibuzul", "Take trolley")
+        .replace("Ia tramvaiul", "Take tram")
+        .replace("Ieși din", "Exit from")
+        .replace("stația", "station")
+        .replace("Stația", "Station")
+        .replace("direcția", "direction")
+        .replace("coboară la", "get off at")
+        .replace("Coboară la", "Get off at")
+        .replace("spre", "towards")
+        .replace("Spre", "Towards")
+        .replace("apoi mergi în jur de", "then walk about")
+        .replace("până la intrare", "to the entrance")
+        .replace("metrou", "metro")
+        .replace("Metrou", "Metro")
+        .replace("linii", "lines")
+        .replace("linia", "line")
+        .replace("Autobuz", "Bus")
+        .replace("autobuz", "bus")
+        .replace("Tramvai", "Tram")
+        .replace("tramvai", "tram")
+        .replace("Troleibuz", "Trolleybus")
+        .replace("troleibuz", "trolleybus")
+        .replace("Timp estimat", "Estimated time")
+        .replace("minute", "minutes")
+        .replace("minut", "minute")
+}
+
+fun translateAlertText(text: String, isEnglish: Boolean): String {
+    if (!isEnglish) return text
+    return when (text) {
+        "Lucrări pe Linia 41" -> "Works on Line 41"
+        "Tramvaiele liniei 41 circulă deviat temporar din cauza lucrărilor de reabilitare a carosabilului din zona Pasajului Grant. Autobuzele navetă 641 preiau fluxul de călători." ->
+            "Tram 41 is temporarily rerouted due to roadworks near Grant Passage. Shuttle buses 641 are covering the passenger flow."
+        "Modificare Traseu Eveniment" -> "Event Route Changes"
+        "În weekendul curent, liniile din zona Calea Victoriei sunt deviate temporar pentru evenimentul Străzi Deschise." ->
+            "This weekend, bus lines around Calea Victoriei are temporarily rerouted for the 'Străzi Deschise' event."
+        "Zilele Clujului - Trasee Deviate" -> "Zilele Clujului - Rerouted Lines"
+        "Liniile de troleibuz 6, 7 și 25 vor avea traseul scurtat până în Piața Cipariu în intervalul orar 18:00 - 23:00 pentru concertele din Piața Unirii." ->
+            "Trolleybus lines 6, 7, and 25 will be shortened to Cipariu Square from 18:00 to 23:00 due to concerts in Piața Unirii."
+        "Suplimentare Linie 20 Poiana" -> "Poiana Line 20 Supplemental Buses"
+        "A fost suplimentat numărul de autobuze de pe linia 20 Livada Poștei - Poiana Brașov datorită afluxului masiv de turiști sosiți în weekend." ->
+            "Additional buses have been scheduled on Line 20 (Livada Poștei - Poiana Brașov) due to massive tourist influx over the weekend."
+        else -> text
+    }
+}
+
+fun getTranslatedCostExplanation(city: String, isEnglish: Boolean, defaultExplanation: String): String {
+    if (!isEnglish) return defaultExplanation
+    return when (city) {
+        "București" -> "1.30 € + VAT (~6.5 Lei) for a 90-minute urban travel on any metropolitan STB line."
+        "Brașov" -> "4.00 Lei for a 60-minute travel on the urban RATBV network."
+        else -> "0.65 € + VAT (~3.2 Lei) for a 30-minute urban travel on any CTP Cluj line."
+    }
 }
 
 @Composable
@@ -808,7 +1289,9 @@ fun OptimizedSummaryBar(
     onToggleDashboard: (() -> Unit)? = null,
     isSimulatingNavigation: Boolean = false,
     onStartSimulationClick: () -> Unit = {},
-    onStopSimulationClick: () -> Unit = {}
+    onStopSimulationClick: () -> Unit = {},
+    onHideCompletely: (() -> Unit)? = null,
+    isEnglish: Boolean = false
 ) {
     Surface(
         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f),
@@ -846,7 +1329,7 @@ fun OptimizedSummaryBar(
                             modifier = Modifier.size(13.dp)
                         )
                         Text(
-                            text = "RUTĂ OPTIMIZATĂ",
+                            text = if (isEnglish) "OPTIMIZED ROUTE" else "RUTĂ OPTIMIZATĂ",
                             fontSize = 9.sp,
                             fontWeight = FontWeight.ExtraBold,
                             letterSpacing = 0.6.sp,
@@ -857,7 +1340,7 @@ fun OptimizedSummaryBar(
                     Spacer(modifier = Modifier.height(2.dp))
                     
                     Text(
-                        text = "🏛️ $count spot • 🕒 ${hours}h ${minutes}m • 🎫 $fare Lei",
+                        text = if (isEnglish) "🏛️ $count spot${if (count != 1) "s" else ""} • 🕒 ${hours}h ${minutes}m • 🎫 $fare Lei" else "🏛️ $count obiective • 🕒 ${hours}h ${minutes}m • 🎫 $fare Lei",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -876,7 +1359,7 @@ fun OptimizedSummaryBar(
                             modifier = Modifier.size(13.dp)
                         )
                         Text(
-                            text = "Alege atracții în $city",
+                            text = if (isEnglish) "Select attractions in $city" else "Alege atracții în $city",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -886,7 +1369,7 @@ fun OptimizedSummaryBar(
                     }
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Selectează obiective din tab.",
+                        text = if (isEnglish) "Select sights from the tab." else "Selectează obiective din tab.",
                         fontSize = 10.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -924,7 +1407,11 @@ fun OptimizedSummaryBar(
                         ) {
                             Icon(
                                 imageVector = if (isSimulatingNavigation) Icons.Default.Close else Icons.Default.PlayArrow,
-                                contentDescription = if (isSimulatingNavigation) "Oprește ghidajul" else "Pornește ghidajul",
+                                contentDescription = if (isSimulatingNavigation) {
+                                    if (isEnglish) "Stop route guidance" else "Oprește ghidajul"
+                                } else {
+                                    if (isEnglish) "Start route guidance" else "Pornește ghidajul"
+                                },
                                 tint = Color.White,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -949,7 +1436,7 @@ fun OptimizedSummaryBar(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Add,
-                                contentDescription = "Salvează online",
+                                contentDescription = if (isEnglish) "Save offline" else "Salvează online",
                                 tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -976,7 +1463,38 @@ fun OptimizedSummaryBar(
                         ) {
                             Icon(
                                 imageVector = if (isCollapsed) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                contentDescription = if (isCollapsed) "Afișează panoul" else "Ascunde panoul",
+                                contentDescription = if (isCollapsed) {
+                                    if (isEnglish) "Show dashboard panel" else "Afișează panoul"
+                                } else {
+                                    if (isEnglish) "Hide dashboard panel" else "Ascunde panoul"
+                                },
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+
+                if (isCollapsed && onHideCompletely != null) {
+                    // Close/Hide completely button inside collapsed state
+                    IconButton(
+                        onClick = onHideCompletely,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .testTag("summary_bar_hide_button")
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = RoundedCornerShape(8.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = if (isEnglish) "Hide completely" else "Ascunde complet",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -994,14 +1512,27 @@ fun SpotsChecklistTab(
     spots: List<TouristSpot>,
     customStartSpot: TouristSpot?,
     onToggle: (Long, Boolean) -> Unit,
+    onDeselectAll: () -> Unit,
     onDelete: (Long) -> Unit,
     onClearCustom: () -> Unit,
-    onSetStartClick: (TouristSpot) -> Unit
+    onSetStartClick: (TouristSpot) -> Unit,
+    isEnglish: Boolean = false,
+    weather: WeatherInfo? = null,
+    selectedPreset: String = "DEFAULT",
+    onSelectPreset: (String) -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var filterOnlySelected by remember { mutableStateOf(false) }
 
-    val filteredSpots = spots.filter { spot ->
+    val translatedSpots = remember(spots, isEnglish) {
+        spots.map { it.translate(isEnglish) }
+    }
+
+    val translatedCustomStartSpot = remember(customStartSpot, isEnglish) {
+        customStartSpot?.translate(isEnglish)
+    }
+
+    val filteredSpots = translatedSpots.filter { spot ->
         val matchesSearch = spot.name.contains(searchQuery, ignoreCase = true) ||
                 spot.description.contains(searchQuery, ignoreCase = true)
         val matchesSelected = !filterOnlySelected || spot.isSelected
@@ -1017,22 +1548,38 @@ fun SpotsChecklistTab(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Puncte Disponibile în $city",
+                text = if (isEnglish) "Available Spots in $city" else "Puncte Disponibile în $city",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            val customCount = spots.count { it.isCustom }
-            if (customCount > 0) {
-                TextButton(
-                    onClick = onClearCustom,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text("Șterge noi", fontSize = 11.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                val selectedCount = spots.count { it.isSelected }
+                if (selectedCount > 0) {
+                    TextButton(
+                        onClick = onDeselectAll,
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                        modifier = Modifier.testTag("deselect_all_spots_btn")
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text(if (isEnglish) "Deselect All" else "Deselectează tot", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                val customCount = spots.count { it.isCustom }
+                if (customCount > 0) {
+                    TextButton(
+                        onClick = onClearCustom,
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text(if (isEnglish) "Delete custom" else "Șterge noi", fontSize = 11.sp)
+                    }
                 }
             }
         }
@@ -1048,12 +1595,12 @@ fun SpotsChecklistTab(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Caută atracții...", fontSize = 12.sp) },
+                placeholder = { Text(if (isEnglish) "Search attractions..." else "Caută atracții...", fontSize = 12.sp) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Șterge", modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Clear, contentDescription = if (isEnglish) "Clear" else "Șterge", modifier = Modifier.size(16.dp))
                         }
                     }
                 },
@@ -1072,7 +1619,7 @@ fun SpotsChecklistTab(
             FilterChip(
                 selected = filterOnlySelected,
                 onClick = { filterOnlySelected = !filterOnlySelected },
-                label = { Text("Doar selectate", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                label = { Text(if (isEnglish) "Selected only" else "Doar selectate", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
                 modifier = Modifier.height(34.dp).testTag("filter_selected_chip"),
                 shape = RoundedCornerShape(16.dp),
                 colors = FilterChipDefaults.filterChipColors(
@@ -1107,13 +1654,13 @@ fun SpotsChecklistTab(
                             modifier = Modifier.size(48.dp)
                         )
                         Text(
-                            text = "Nicio atracție găsită",
+                            text = if (isEnglish) "No sights found" else "Nicio atracție găsită",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Încearcă să modifici textul de căutare sau definește un punct personalizat atingând direct pe harta de mai sus!",
+                            text = if (isEnglish) "Try modifying the search text or define a custom location by clicking directly on the map above!" else "Încearcă să modifici textul de căutare sau definește un punct personalizat atingând direct pe harta de mai sus!",
                             style = MaterialTheme.typography.bodySmall,
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1129,9 +1676,163 @@ fun SpotsChecklistTab(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
+                item {
+                    if (weather != null) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    // Left Column: Big icon & Temp & Condition
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.padding(end = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = weather.iconEmoji,
+                                            fontSize = 36.sp,
+                                            modifier = Modifier.padding(bottom = 4.dp)
+                                        )
+                                        Text(
+                                            text = "${weather.tempCelsius}°C",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = if (isEnglish) weather.conditionEn else weather.conditionRo,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+
+                                    // Divider line inside card
+                                    Box(
+                                        modifier = Modifier
+                                            .width(1.dp)
+                                            .height(80.dp)
+                                            .background(MaterialTheme.colorScheme.outlineVariant)
+                                    )
+
+                                    // Right Column: Details & Tourist Advice
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isEnglish) "Tourist Weather Advisory" else "Consilier Meteo Turistic",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            letterSpacing = 1.sp,
+                                            color = MaterialTheme.colorScheme.secondary
+                                        )
+                                        
+                                        Text(
+                                            text = if (isEnglish) weather.adviceEn else weather.adviceRo,
+                                            fontSize = 11.sp,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            lineHeight = 15.sp
+                                        )
+                                        
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        
+                                        // Technical parameters
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            // Wind
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(11.dp), tint = MaterialTheme.colorScheme.primary)
+                                                Spacer(modifier = Modifier.width(2.dp))
+                                                Text(text = "${weather.windKmh} km/h", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            
+                                            // Rain %
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(11.dp), tint = if (weather.rainProbabilityPercent > 50) Color(0xFFEC4899) else Color(0xFF10B981))
+                                                Spacer(modifier = Modifier.width(2.dp))
+                                                Text(
+                                                    text = (if (isEnglish) "Rain: " else "Ploaie: ") + "${weather.rainProbabilityPercent}%",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (weather.rainProbabilityPercent > 50) Color(0xFFEC4899) else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            
+                                            // UV Index
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(11.dp), tint = if (weather.uvIndex > 6) Color(0xFFFBBF24) else Color(0xFF60A5FA))
+                                                Spacer(modifier = Modifier.width(2.dp))
+                                                Text(text = "UV: ${weather.uvIndex}", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Presets selection row
+                                Text(
+                                    text = if (isEnglish) "Simulate Weather Scenario:" else "Simulează alt scenariu meteo:",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    val presets = listOf(
+                                        Pair("DEFAULT", if (isEnglish) "Default" else "Implicit"),
+                                        Pair("SUNNY", "☀️ " + (if (isEnglish) "Sunny" else "Senin")),
+                                        Pair("RAINY", "🌧️ " + (if (isEnglish) "Rainy" else "Ploaie")),
+                                        Pair("CLOUDY", "⛅ " + (if (isEnglish) "Cloudy" else "Noros")),
+                                        Pair("HEATWAVE", "🥵 " + (if (isEnglish) "Heat" else "Arșiță"))
+                                    )
+                                    presets.forEach { (presetKey, displayName) ->
+                                        val isSelected = selectedPreset == presetKey
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                                .clickable { onSelectPreset(presetKey) }
+                                                .padding(vertical = 4.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = displayName,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 items(filteredSpots) { spot ->
-                    val isCurrentStart = (customStartSpot?.id == spot.id) || 
-                        (customStartSpot == null && spot.name == TransitNetwork.getStartSpot(city).name)
+                    val isCurrentStart = (translatedCustomStartSpot?.id == spot.id) || 
+                        (translatedCustomStartSpot == null && spot.name == TransitNetwork.getStartSpot(city).translate(isEnglish).name)
 
                     val cardColor = if (spot.isSelected) 
                         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f) 
@@ -1194,7 +1895,7 @@ fun SpotsChecklistTab(
                                                 .background(Color(0xFFEAB308).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
                                                 .padding(horizontal = 5.dp, vertical = 2.dp)
                                         ) {
-                                            Text("PERS.", fontSize = 8.sp, color = Color(0xFFEAB308), fontWeight = FontWeight.Bold)
+                                            Text(if (isEnglish) "CUSTOM" else "PERS.", fontSize = 8.sp, color = Color(0xFFEAB308), fontWeight = FontWeight.Bold)
                                         }
                                     }
                                 }
@@ -1217,7 +1918,7 @@ fun SpotsChecklistTab(
                                         modifier = Modifier.size(12.dp)
                                     )
                                     Text(
-                                        text = "Durată vizită: ${spot.visitDurationMinutes} min",
+                                        text = if (isEnglish) "Visit duration: ${spot.visitDurationMinutes} mins" else "Durată vizită: ${spot.visitDurationMinutes} min",
                                         fontSize = 11.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontWeight = FontWeight.Medium
@@ -1235,7 +1936,7 @@ fun SpotsChecklistTab(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.LocationOn,
-                                        contentDescription = "Setează ca pornire",
+                                        contentDescription = if (isEnglish) "Set as starting point" else "Setează ca pornire",
                                         tint = if (isCurrentStart) Color(0xFFEC4899) else MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(20.dp)
                                     )
@@ -1248,7 +1949,7 @@ fun SpotsChecklistTab(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Delete,
-                                            contentDescription = "Șterge atracție",
+                                            contentDescription = if (isEnglish) "Delete spot" else "Șterge atracție",
                                             tint = MaterialTheme.colorScheme.error,
                                             modifier = Modifier.size(20.dp)
                                         )
@@ -1271,7 +1972,8 @@ fun TimelineTab(
     city: String,
     isSimulatingNavigation: Boolean = false,
     onStartSimulationClick: () -> Unit = {},
-    onStopSimulationClick: () -> Unit = {}
+    onStopSimulationClick: () -> Unit = {},
+    isEnglish: Boolean = false
 ) {
     // Dynamic timetable hour calculation
     val startMin = 540 // 09:00 AM
@@ -1280,7 +1982,7 @@ fun TimelineTab(
         val list = mutableListOf<Pair<Int, Int>>() // Arrival, Departure
         val legsCount = journey?.legs?.size ?: 0
         for (i in 0 until legsCount) {
-            val leg = journey!!.legs[i]
+            val leg = journey?.legs?.getOrNull(i) ?: continue
             val arrival = rollingMin + leg.durationMinutes
             val spot = journey.orderedSpots.getOrNull(i)
             val visitDuration = spot?.visitDurationMinutes ?: 0
@@ -1306,7 +2008,7 @@ fun TimelineTab(
     ) {
         // ALWAYS show live operator transit banner at the top
         item {
-            LiveOperatorApiPanel(city = city)
+            LiveOperatorApiPanel(city = city, isEnglish = isEnglish)
         }
 
         if (journey != null && journey.orderedSpots.isNotEmpty()) {
@@ -1327,14 +2029,22 @@ fun TimelineTab(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (isSimulatingNavigation) "🧭 Navigație Activă" else "🗺️ Pornește în Traseu",
+                                text = if (isSimulatingNavigation) {
+                                    if (isEnglish) "🧭 Navigation Active" else "🧭 Navigație Activă"
+                                } else {
+                                    if (isEnglish) "🗺️ Start Route" else "🗺️ Pornește în Traseu"
+                                },
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = if (isSimulatingNavigation) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = if (isSimulatingNavigation) "Urmărește trackerul GPS live cum traversează traseul." else "Pornește ghidul interactiv pas cu pas pentru acest itinerar.",
+                                text = if (isSimulatingNavigation) {
+                                    if (isEnglish) "Monitor the live GPS tracker moving through the route." else "Urmărește trackerul GPS live cum traversează traseul."
+                                } else {
+                                    if (isEnglish) "Launch interactive step-by-step guidance for this itinerary." else "Pornește ghidul interactiv pas cu pas pentru acest itinerar."
+                                },
                                 fontSize = 10.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1362,7 +2072,11 @@ fun TimelineTab(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = if (isSimulatingNavigation) "Oprește" else "Start",
+                                text = if (isSimulatingNavigation) {
+                                    if (isEnglish) "Stop" else "Oprește"
+                                } else {
+                                    "Start"
+                                },
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
@@ -1394,13 +2108,13 @@ fun TimelineTab(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                         )
                         Text(
-                            text = "Niciun traseu generat încă",
+                            text = if (isEnglish) "No route generated yet" else "Niciun traseu generat încă",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Alege puncte turistice din tab-ul 'Atracții' pentru a calcula automat un traseu optimizat cu etapele de tranzit!",
+                            text = if (isEnglish) "Select tourist spots from the 'Attractions' tab to automatically calculate an optimized route with transit steps!" else "Alege puncte turistice din tab-ul 'Atracții' pentru a calcula automat un traseu optimizat cu etapele de tranzit!",
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1442,13 +2156,13 @@ fun TimelineTab(
                             }
                             Column {
                                 Text(
-                                    text = "START: $startLabel",
+                                    text = "START: ${startLabel}",
                                     fontWeight = FontWeight.ExtraBold,
                                     fontSize = 13.sp,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Punct inițial de plecare",
+                                    text = if (isEnglish) "Initial departure point" else "Punct inițial de plecare",
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1460,7 +2174,7 @@ fun TimelineTab(
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = "Plecare: $startHour",
+                                text = if (isEnglish) "Departure: $startHour" else "Plecare: $startHour",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 11.sp,
                                 color = Color.White
@@ -1544,7 +2258,7 @@ fun TimelineTab(
                                             modifier = Modifier.size(16.dp)
                                         )
                                         Text(
-                                            text = if (leg.type == LegType.BUS) (leg.busLineName ?: "Autobuz") else "Plimbare pe Jos",
+                                            text = if (leg.type == LegType.BUS) (leg.busLineName ?: (if (isEnglish) "Bus" else "Autobuz")) else (if (isEnglish) "Walking" else "Plimbare pe Jos"),
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 12.sp,
                                             color = if (leg.type == LegType.BUS) legColor else MaterialTheme.colorScheme.onSurfaceVariant
@@ -1565,7 +2279,7 @@ fun TimelineTab(
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = leg.directions,
+                                    text = translateDirections(leg.directions, isEnglish),
                                     fontSize = 11.sp,
                                     lineHeight = 14.sp,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -1593,7 +2307,7 @@ fun TimelineTab(
                                                 .background(Color(0xFFEF4444), CircleShape)
                                         )
                                         Text(
-                                            text = "LIVE: SOSIRE ÎN ${arrivals.first()} MIN (Următoarele: ${arrivals.drop(1).joinToString(", ")} min)",
+                                            text = if (isEnglish) "LIVE: ARRIVING IN ${arrivals.first()} MINS (Next: ${arrivals.drop(1).joinToString(", ")} mins)" else "LIVE: SOSIRE ÎN ${arrivals.first()} MIN (Următoarele: ${arrivals.drop(1).joinToString(", ")} min)",
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = Color(0xFFF87171)
@@ -1609,7 +2323,7 @@ fun TimelineTab(
                     // The destination place visit card
                     val destinationIndex = index
                     if (destinationIndex < journey.orderedSpots.size) {
-                        val spot = journey.orderedSpots[destinationIndex]
+                        val spot = journey.orderedSpots[destinationIndex].translate(isEnglish)
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1660,7 +2374,7 @@ fun TimelineTab(
                                                 modifier = Modifier.size(11.dp)
                                             )
                                             Text(
-                                                text = "Vizită de: ${spot.visitDurationMinutes} min",
+                                                text = if (isEnglish) "Visit duration: ${spot.visitDurationMinutes} mins" else "Vizită de: ${spot.visitDurationMinutes} min",
                                                 fontSize = 11.sp,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -1694,13 +2408,23 @@ fun TimelineTab(
 @Composable
 fun LiveOperatorApiPanel(
     city: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isEnglish: Boolean = false
 ) {
     val context = LocalContext.current
     val op = remember(city) { TransportApiEngine.getOperatorForCity(city) }
     val smsConfig = remember(city) { TransportApiEngine.getSmsTicketDetails(city) }
     val alerts = remember(city) { TransportApiEngine.getLiveAlerts(city) }
     
+    val translatedAlerts = remember(alerts, isEnglish) {
+        alerts.map { alert ->
+            alert.copy(
+                title = translateAlertText(alert.title, isEnglish),
+                message = translateAlertText(alert.message, isEnglish)
+            )
+        }
+    }
+
     // State to simulate paid ticket right inside the app
     var hasActiveTicket by remember { mutableStateOf(false) }
     var ticketTimeLeft by remember { mutableStateOf(smsConfig.validityMinutes * 60) } // in seconds
@@ -1769,7 +2493,7 @@ fun LiveOperatorApiPanel(
                             color = Color.White
                         )
                         Text(
-                            text = "Dispecerat API Conectat",
+                            text = if (isEnglish) "API Dispatch Connected" else "Dispecerat API Conectat",
                             fontSize = 10.sp,
                             color = Color(0xFF10B981), // Emerald online indicator
                             fontWeight = FontWeight.Medium
@@ -1812,7 +2536,7 @@ fun LiveOperatorApiPanel(
             Spacer(modifier = Modifier.height(12.dp))
             
             // 1. Alerts Section (Collapsible)
-            if (alerts.isNotEmpty()) {
+            if (translatedAlerts.isNotEmpty()) {
                 Surface(
                     onClick = { showAlertsDesc = !showAlertsDesc },
                     color = Color(0xFFEF4444).copy(alpha = 0.08f),
@@ -1837,7 +2561,7 @@ fun LiveOperatorApiPanel(
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Text(
-                                    text = "Alerte de Tranzit Active (${alerts.size})",
+                                    text = if (isEnglish) "Active Transit Alerts (${translatedAlerts.size})" else "Alerte de Tranzit Active (${translatedAlerts.size})",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFFF87171)
@@ -1857,7 +2581,7 @@ fun LiveOperatorApiPanel(
                                 modifier = Modifier.padding(top = 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                alerts.forEach { alert ->
+                                translatedAlerts.forEach { alert ->
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                                         modifier = Modifier.fillMaxWidth()
@@ -1888,7 +2612,7 @@ fun LiveOperatorApiPanel(
             
             // 2. LIVE VEHICLES SENSOR (Horizontal Row)
             Text(
-                text = "🚌 GPS Live Poziție Vehicule (${op.shortName})",
+                text = if (isEnglish) "🚌 Live GPS Vehicle Positions (${op.shortName})" else "🚌 GPS Live Poziție Vehicule (${op.shortName})",
                 fontWeight = FontWeight.Bold,
                 fontSize = 11.sp,
                 color = Color.White
@@ -1920,7 +2644,7 @@ fun LiveOperatorApiPanel(
                                     color = Color(0xFF3B82F6)
                                 )
                                 Text(
-                                    text = if (v.delayMinutes > 0) "+${v.delayMinutes} min" else "La timp",
+                                    text = if (v.delayMinutes > 0) "+${v.delayMinutes} min" else (if (isEnglish) "On time" else "La timp"),
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (v.delayMinutes > 0) Color(0xFFEAB308) else Color(0xFF10B981)
@@ -1934,7 +2658,7 @@ fun LiveOperatorApiPanel(
                               )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Direcție: ${v.direction}",
+                                text = if (isEnglish) "Direction: ${v.direction.replace("Spre", "To")}" else "Direcție: ${v.direction}",
                                 fontSize = 9.sp,
                                 color = Color.White,
                                 maxLines = 1
@@ -1980,13 +2704,13 @@ fun LiveOperatorApiPanel(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "🎟️ Portofel Bilete Electronice",
+                    text = if (isEnglish) "🎟️ Electronic Tickets Wallet" else "🎟️ Portofel Bilete Electronice",
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,
                     color = Color.White
                 )
                 Text(
-                    text = "SMS la ${smsConfig.number}",
+                    text = if (isEnglish) "SMS to ${smsConfig.number}" else "SMS la ${smsConfig.number}",
                     fontSize = 10.sp,
                     color = Color(0xFF3B82F6),
                     fontWeight = FontWeight.Bold
@@ -2018,7 +2742,7 @@ fun LiveOperatorApiPanel(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "BILET ACTIV: ${op.shortName}",
+                                text = if (isEnglish) "ACTIVE TICKET: ${op.shortName}" else "BILET ACTIV: ${op.shortName}",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 11.sp,
                                 color = Color(0xFF38BDF8)
@@ -2029,7 +2753,7 @@ fun LiveOperatorApiPanel(
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
                                 Text(
-                                    text = "VALID",
+                                    text = if (isEnglish) "VALID" else "VALID",
                                     fontSize = 8.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.Black
@@ -2047,7 +2771,7 @@ fun LiveOperatorApiPanel(
                             color = Color.White
                         )
                         Text(
-                            text = "TIMP RĂMAS",
+                            text = if (isEnglish) "TIME REMAINING" else "TIMP RĂMAS",
                             fontSize = 8.sp,
                             color = Color(0xFF94A3B8)
                         )
@@ -2057,7 +2781,7 @@ fun LiveOperatorApiPanel(
                         // Holographic confirmation code generator
                         val securityCode = remember { "SMS-${op.shortName}-${1000 + kotlin.random.Random.nextInt(9000)}-OK" }
                         Text(
-                            text = "Cod Control: $securityCode",
+                            text = if (isEnglish) "Control Code: $securityCode" else "Cod Control: $securityCode",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF38BDF8)
@@ -2065,7 +2789,7 @@ fun LiveOperatorApiPanel(
                         
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Prezentarea acestui ecran la control confirmă plata biletului urban.",
+                            text = if (isEnglish) "Presenting this screen during inspection confirms urban ticket payment." else "Prezentarea acestui ecran la control confirmă plata biletului urban.",
                             fontSize = 9.sp,
                             color = Color(0xFF94A3B8),
                             textAlign = TextAlign.Center
@@ -2076,7 +2800,7 @@ fun LiveOperatorApiPanel(
                 // Inactive state: trigger buttons
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = smsConfig.costExplanation,
+                        text = getTranslatedCostExplanation(city, isEnglish, smsConfig.costExplanation),
                         fontSize = 10.sp,
                         color = Color(0xFF94A3B8),
                         lineHeight = 13.sp
@@ -2096,7 +2820,7 @@ fun LiveOperatorApiPanel(
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(
-                                text = "Trimite SMS Real",
+                                text = if (isEnglish) "Send Real SMS" else "Trimite SMS Real",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
@@ -2114,7 +2838,7 @@ fun LiveOperatorApiPanel(
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(
-                                text = "Simulează Achiziție",
+                                text = if (isEnglish) "Simulate Purchase" else "Simulează Achiziție",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -2130,7 +2854,8 @@ fun LiveOperatorApiPanel(
 fun AiGuideTab(
     recommendationText: String,
     isLoading: Boolean,
-    onCallAi: () -> Unit
+    onCallAi: () -> Unit,
+    isEnglish: Boolean = false
 ) {
     if (isLoading) {
         Box(
@@ -2141,7 +2866,7 @@ fun AiGuideTab(
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Gemini scrie răspunsul optimizat...",
+                    text = if (isEnglish) "Gemini is compiling optimized response..." else "Gemini scrie răspunsul optimizat...",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2168,12 +2893,13 @@ fun AiGuideTab(
                     tint = Color(0xFFEAB308)
                 )
                 Text(
-                    text = "Ghid Turistic AI Gemini",
+                    text = if (isEnglish) "Gemini AI Tour Guide" else "Ghid Turistic AI Gemini",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Lăsați AI-ul Gemini să analizeze punctele tale alese și să compileze o descriere a întregii zile cu ore estimate, recomandări de autobuze optime din mers și detalii specifice fiecărui obiectiv!",
+                    text = if (isEnglish) "Let Gemini AI analyze your selected spots and compile a full-day optimized schedule with estimated travel times, cost approximations, transit recommendations and local tips!"
+                           else "Lăsați AI-ul Gemini să analizeze punctele tale alese și să compileze o descriere a întregii zile cu ore estimate, recomandări de autobuze optime din mers și detalii specifice fiecărui obiectiv!",
                     textAlign = TextAlign.Center,
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2186,7 +2912,7 @@ fun AiGuideTab(
                 ) {
                     Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Generează Traseu AI cu Gemini")
+                    Text(if (isEnglish) "Generate AI Route with Gemini" else "Generează Traseu AI cu Gemini")
                 }
             }
         }
@@ -2212,7 +2938,7 @@ fun AiGuideTab(
                 ) {
                     Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFEAB308))
                     Text(
-                        text = "Sfaturi și Ghid AI Real-Time",
+                        text = if (isEnglish) "Real-Time AI Guide & Tips" else "Sfaturi și Ghid AI Real-Time",
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
                     )
@@ -2226,7 +2952,7 @@ fun AiGuideTab(
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(12.dp))
                     Spacer(modifier = Modifier.width(2.dp))
-                    Text("Actualizează", fontSize = 10.sp)
+                    Text(if (isEnglish) "Refresh" else "Actualizează", fontSize = 10.sp)
                 }
             }
         }
@@ -2250,9 +2976,413 @@ fun AiGuideTab(
 }
 
 @Composable
+fun LiveTestingTab(
+    city: String,
+    journey: OptimizedJourney?,
+    testingLogs: List<TestingLog>,
+    useRealDeviceGps: Boolean,
+    onToggleRealGps: (Boolean) -> Unit,
+    mapActionMode: String,
+    onSetMapActionMode: (String) -> Unit,
+    onSaveLog: (String, String, String) -> Unit,
+    onDeleteLog: (Long) -> Unit,
+    onClearLogs: () -> Unit,
+    isEnglish: Boolean = false
+) {
+    var placeNameInput by remember { mutableStateOf("") }
+    var noteInput by remember { mutableStateOf("") }
+    var observerNameInput by remember(isEnglish) { mutableStateOf(if (isEnglish) "Field Tester" else "Testor Teren") }
+
+    val itinerarySpots = remember(journey, isEnglish) {
+        val list = mutableListOf<String>()
+        journey?.orderedSpots?.forEach { list.add(translateSpotName(it.name, isEnglish)) }
+        list
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("live_testing_tab_list")
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // 1. Tracker Control Header
+        item {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        text = if (isEnglish) "🛠️ Real Field Testing Mode" else "🛠️ Mod Testare Reală pe Teren",
+                        fontWeight = FontWeight.ExtraBold,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = if (isEnglish) "This section controls GPS and allows recording on-site audits while traversing the tourist bus route." else "Această secțiune controlează GPS-ul și permite înregistrarea de audituri de la fața locului în timp ce parcurgi traseul de autobuz.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // GPS Mode Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (isEnglish) "Hardware GPS Sensor (Satellite)" else "Senzor GPS Hardware (Satelit)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = if (isEnglish) {
+                                    if (useRealDeviceGps) "Active: following real physical location." else "Inactive: using simulated coordinates."
+                                } else {
+                                    if (useRealDeviceGps) "Activ: urmărește locația fizică reală." else "Inactiv: folosește coordonate simulate."
+                                },
+                                fontSize = 10.sp,
+                                color = if (useRealDeviceGps) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = useRealDeviceGps,
+                            onCheckedChange = onToggleRealGps,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF10B981),
+                                checkedTrackColor = Color(0xFF10B981).copy(alpha = 0.3f)
+                            )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Map action mode segmented chooser
+                    Text(
+                        text = if (isEnglish) "On Map Tap:" else "La Apăsarea pe Hartă:",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = mapActionMode == "ADD_SPOT",
+                            onClick = { onSetMapActionMode("ADD_SPOT") },
+                            leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                            label = { Text(if (isEnglish) "Add Attraction" else "Adaugă Atracție", fontSize = 11.sp) },
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        FilterChip(
+                            selected = mapActionMode == "SET_GPS",
+                            onClick = { onSetMapActionMode("SET_GPS") },
+                            leadingIcon = { Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                            label = { Text(if (isEnglish) "Teleport GPS" else "Teleportează GPS", fontSize = 11.sp) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+
+        // 2. Logging Interface
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        text = if (isEnglish) "📝 Record Field Audit" else "📝 Înregistrează Audit de Teren",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (isEnglish) "Take notes regarding bus delays, attraction conditions, or station cleanliness." else "Scrie notițe referitoare la întârzieri de autobuze, starea atracțiilor sau curățenia stației.",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (itinerarySpots.isNotEmpty()) {
+                        Text(
+                            text = if (isEnglish) "Quickly select spot from route:" else "Alege rapid punct din traseu:",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            contentPadding = PaddingValues(bottom = 6.dp)
+                        ) {
+                            items(itinerarySpots) { s ->
+                                val isSelected = placeNameInput == s
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (isSelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surfaceVariant)
+                                        .clickable { placeNameInput = s }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = s,
+                                        fontSize = 10.sp,
+                                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = placeNameInput,
+                        onValueChange = { placeNameInput = it },
+                        label = { Text(if (isEnglish) "Location / Station Name" else "Nume Locație / Stație", fontSize = 11.sp) },
+                        placeholder = { Text(if (isEnglish) "e.g., Sanitas Station, Graft Bastion..." else "Ex. Stația Sanitas, Bastionul Graft...", fontSize = 11.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = noteInput,
+                        onValueChange = { noteInput = it },
+                        label = { Text(if (isEnglish) "Audit Observation (Field Note)" else "Observație Audit (Notă Teren)", fontSize = 11.sp) },
+                        placeholder = { Text(if (isEnglish) "e.g. Bus 4 arrived with 3 min delay. Fairly empty." else "Ex. Autobuzul 4 a sosit cu 3 min întârziere. Destul de liber.", fontSize = 11.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = MaterialTheme.typography.bodyMedium
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = observerNameInput,
+                        onValueChange = { observerNameInput = it },
+                        label = { Text(if (isEnglish) "Inspector / Auditor / Tester Name" else "Nume Controlor / Auditor / Testor", fontSize = 11.sp) },
+                        placeholder = { Text(if (isEnglish) "e.g. Popescu Ion, Maria, etc." else "Ex. Popescu Ion, Maria, etc.", fontSize = 11.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Button(
+                        onClick = {
+                            if (placeNameInput.isNotBlank() && noteInput.isNotBlank()) {
+                                val obs = if (observerNameInput.isBlank()) (if (isEnglish) "Field Tester" else "Testor Teren") else observerNameInput
+                                onSaveLog(placeNameInput, noteInput, obs)
+                                noteInput = ""
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(40.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        enabled = placeNameInput.isNotBlank() && noteInput.isNotBlank()
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (isEnglish) "Save to Report" else "Salvează în Raport", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // 3. Saved Audit Logs list
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (isEnglish) "📊 Local Testing Report (${testingLogs.size})" else "📊 Raport de Testare local (${testingLogs.size})",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                if (testingLogs.isNotEmpty()) {
+                    TextButton(
+                        onClick = onClearLogs,
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFEF4444))
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text(if (isEnglish) "Clear Report" else "Șterge Raport", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        if (testingLogs.isEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (isEnglish) "No observations recorded yet.\nTake notes on route status when you are in the field!" else "Nicio observație înregistrată încă.\nNotează starea traseului când ești pe teren!",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        } else {
+            items(testingLogs) { log ->
+                val timeFormatted = remember(log.timestamp) {
+                    val sdf = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                    sdf.format(java.util.Date(log.timestamp))
+                }
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = "📍 ${translateSpotName(log.placeName, isEnglish)}",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "• $timeFormatted",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { onDeleteLog(log.id) },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = if (isEnglish) "Delete log" else "Șterge log",
+                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = log.note,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            lineHeight = 16.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (isEnglish) "Observed by: ${log.observerName}" else "Observat de: ${log.observerName}",
+                            fontSize = 9.sp,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+fun translateCityName(city: String, isEnglish: Boolean): String {
+    return if (isEnglish) {
+        when (city) {
+            "București" -> "Bucharest"
+            "Brașov" -> "Brasov"
+            else -> city
+        }
+    } else {
+        city
+    }
+}
+
+fun translateRouteDetailsText(text: String, isEnglish: Boolean): String {
+    if (!isEnglish) return text
+    var translated = text
+        .replace("Pornire:", "Start:")
+        .replace("Gara Centrală", "Central Station")
+        .replace("Traseu:", "Route:")
+        .replace("Etape de transport:", "Transport stages:")
+    val lines = translated.split("\n").map { line ->
+        if (line.trim().startsWith("- ")) {
+            val rawStage = line.trim().substring(2) // remove "- "
+            val durationIndex = rawStage.lastIndexOf("(")
+            if (durationIndex != -1) {
+                val directions = rawStage.substring(0, durationIndex).trim()
+                val durationPart = rawStage.substring(durationIndex).trim() // e.g. "(15 min)"
+                val translatedDurationPart = durationPart.replace("min", "minutes")
+                "- ${translateDirections(directions, true)} $translatedDurationPart"
+            } else {
+                "- ${translateDirections(rawStage, true)}"
+            }
+        } else {
+            if (line.startsWith("Route: ")) {
+                val routeList = line.substring(7)
+                val translatedRouteList = routeList.split(" ➔ ").map { spot ->
+                    translateSpotName(spot.trim(), true)
+                }.joinToString(" ➔ ")
+                "Route: $translatedRouteList"
+            } else if (line.startsWith("Start: ")) {
+                val startName = line.substring(7).trim()
+                "Start: ${translateSpotName(startName, true)}"
+            } else {
+                line
+            }
+        }
+    }
+    return lines.joinToString("\n")
+}
+
+@Composable
 fun SavedItinerariesTab(
     itineraries: List<SavedItinerary>,
-    onDelete: (Long) -> Unit
+    onDelete: (Long) -> Unit,
+    isEnglish: Boolean = false
 ) {
     if (itineraries.isEmpty()) {
         Box(
@@ -2268,7 +3398,7 @@ fun SavedItinerariesTab(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Nu ai itinerarii salvate încă.",
+                    text = if (isEnglish) "No saved itineraries yet." else "Nu ai itinerarii salvate încă.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp
                 )
@@ -2297,7 +3427,7 @@ fun SavedItinerariesTab(
                     ) {
                         Column {
                             Text(
-                                text = "Itinerar ${record.city}",
+                                text = if (isEnglish) "Itinerary ${translateCityName(record.city, true)}" else "Itinerar ${record.city}",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
                                 color = MaterialTheme.colorScheme.primary
@@ -2305,7 +3435,7 @@ fun SavedItinerariesTab(
                             val hrs = record.totalDurationMinutes / 60
                             val mins = record.totalDurationMinutes % 60
                             Text(
-                                text = "${record.spotsCount} obiective ➔ Durată totală: $hrs h $mins min",
+                                text = if (isEnglish) "${record.spotsCount} objectives ➔ Total: $hrs h $mins min" else "${record.spotsCount} obiective ➔ Durată totală: $hrs h $mins min",
                                 fontSize = 12.sp,
                                 modifier = Modifier.padding(vertical = 2.dp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2318,7 +3448,7 @@ fun SavedItinerariesTab(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Delete,
-                                contentDescription = "Șterge salvare",
+                                contentDescription = if (isEnglish) "Delete saved" else "Șterge salvare",
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(20.dp)
                             )
@@ -2328,7 +3458,7 @@ fun SavedItinerariesTab(
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
                     Text(
-                        text = record.routeDetails,
+                        text = translateRouteDetailsText(record.routeDetails, isEnglish),
                         fontSize = 11.sp,
                         lineHeight = 16.sp,
                         color = MaterialTheme.colorScheme.onSurface
@@ -2351,6 +3481,8 @@ fun SettingsDialog(
     onSimulationSpeedChange: (Float) -> Unit,
     mapColorScheme: String,
     onMapColorSchemeChange: (String) -> Unit,
+    isHighResolution: Boolean,
+    onHighResolutionToggle: (Boolean) -> Unit,
     isSoundEnabled: Boolean,
     onSoundEnabledToggle: (Boolean) -> Unit,
     isEnglish: Boolean,
@@ -2478,6 +3610,31 @@ fun SettingsDialog(
                             checked = isTransitLinesVisible,
                             onCheckedChange = onTransitLinesToggle,
                             modifier = Modifier.testTag("toggle_transit_lines_switch")
+                        )
+                    }
+
+                    // Map Resolution Switch
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (isEnglish) "High Resolution Map (HD/Retina)" else "Hartă de Rezoluție Înaltă (HD/Retina)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (isEnglish) "Load double-density 512px map tiles and street details" else "Încarcă dale de hartă la densitate dublă (512px) și detalii stradale",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = isHighResolution,
+                            onCheckedChange = onHighResolutionToggle,
+                            modifier = Modifier.testTag("toggle_high_res_map_switch")
                         )
                     }
 

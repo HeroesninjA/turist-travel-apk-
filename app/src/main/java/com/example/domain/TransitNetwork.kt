@@ -104,12 +104,31 @@ object TransitNetwork {
 
     // Preset Tourist spots for Bucharest
     val BUCURESTI_PRESETS = listOf(
-        TouristSpot(1001, "Palatul Parlamentului", "București", 44.4275, 26.0872, 90, "Una dintre cele mai mari clădiri administrative din lume.", false, true),
-        TouristSpot(1002, "Centrul Vechi", "București", 44.4320, 26.1015, 120, "Inima istorică a Bucureștiului, plină de viață și clădiri de epocă.", false, true),
-        TouristSpot(1003, "Ateneul Român", "București", 44.4411, 26.0973, 60, "O bijuterie arhitecturală de importanță istorică națională.", false, true),
-        TouristSpot(1004, "Parcul Herăstrău (Mihai I)", "București", 44.4715, 26.0815, 90, "Un parc uriaș, liniștit, situat în jurul unui lac superb.", false, true),
-        TouristSpot(1005, "Arcul de Triumf", "București", 44.4671, 26.0782, 30, "Monumentul care celebrează victoria României în Primul Război Mondial.", false, true),
-        TouristSpot(1006, "Muzeul Național al Satului", "București", 44.4720, 26.0763, 100, "O incursiune în viața rurală tradițională românească în aer liber.", false, true)
+        TouristSpot(1001, "Palatul Parlamentului", "București", 44.4275, 26.0872, 90, "Una dintre cele mai mari clădiri administrative din lume.", false, false),
+        TouristSpot(1002, "Centrul Vechi", "București", 44.4320, 26.1015, 120, "Inima istorică a Bucureștiului, plină de viață și clădiri de epocă.", false, false),
+        TouristSpot(1003, "Ateneul Român", "București", 44.4411, 26.0973, 60, "O bijuterie arhitecturală de importanță istorică națională.", false, false),
+        TouristSpot(1004, "Parcul Herăstrău (Mihai I)", "București", 44.4715, 26.0815, 90, "Un parc uriaș, liniștit, situat în jurul unui lac superb.", false, false),
+        TouristSpot(1005, "Arcul de Triumf", "București", 44.4671, 26.0782, 30, "Monumentul care celebrează victoria României în Primul Război Mondial.", false, false),
+        TouristSpot(1006, "Muzeul Național al Satului", "București", 44.4720, 26.0763, 100, "O incursiune în viața rurală tradițională românească în aer liber.", false, false),
+        TouristSpot(1007, "Parcul Cișmigiu", "București", 44.4355, 26.0912, 60, "Cea mai veche grădină publică din București, un lac romantic și alei liniștite.", false, false),
+        TouristSpot(1008, "Muzeul Național Grigore Antipa", "București", 44.4531, 26.0847, 90, "Expoziții interactive de zoologie, biodiversitate și fosile de dinozaur.", false, false),
+        TouristSpot(1009, "Cărturești Carusel", "București", 44.4319, 26.1022, 45, "Una dintre cele mai spectaculoase librării din lume, situată în Centrul Vechi.", false, false),
+        TouristSpot(1010, "Biserica Stavropoleos", "București", 44.4315, 26.0991, 30, "O capodoperă a stilului brâncovenesc, faimoasă pentru curtea sa interioară.", false, false),
+        TouristSpot(1011, "Muzeul de Artă al României", "București", 44.4396, 26.0959, 90, "Fostul Palat Regal găzduiește colecții remarcabile de artă românească.", false, false),
+        TouristSpot(1012, "Grădina Botanică Dimitrie Brândză", "București", 44.4372, 26.0642, 80, "Oaze de verdeață, sere exotice tropicale și mii de specii de plante în Cotroceni.", false, false),
+        TouristSpot(1013, "Parcul Carol I", "București", 44.4140, 26.0965, 70, "Parc istoric frumos cu Mausoleul impunător și fântâni elegante.", false, false),
+        TouristSpot(1014, "Palatul Primăverii", "București", 44.4685, 26.0920, 60, "Fostul palat luxos de protocol al soților Nicolae și Elena Ceaușescu.", false, false),
+        TouristSpot(1015, "Piața Revoluției", "București", 44.4372, 26.0959, 30, "Piața istorică centrală cu Memorialul Renașterii și clădiri celebre.", false, false),
+        TouristSpot(1016, "Hanul lui Manuc", "București", 44.4294, 26.1025, 45, "Cel mai vechi han funcțional din Europa, oferind o ambianță tradițională excelentă.", false, false),
+        TouristSpot(1017, "Muzeul Național de Istorie a României", "București", 44.4312, 26.0975, 80, "Exponate arheologice și istorice inestimabile, incluzând Tezaurul istoric național.", false, false),
+        TouristSpot(1018, "Palatul Cotroceni", "București", 44.4338, 26.0617, 90, "Reședința oficială a Președintelui și un muzeu istoric de o rară frumusețe.", false, false),
+        TouristSpot(1019, "Parcul Tineretului", "București", 44.4080, 26.1040, 60, "Un parc modern imens cu lac de agrement, piste și un ambient extrem de relaxant.", false, false),
+        TouristSpot(1020, "Catedrala Mântuirii Neamului", "București", 44.4255, 26.0825, 60, "Cea mai mare catedrală ortodoxă din lume, o structură arhitecturală colosală.", false, false),
+        TouristSpot(1021, "Parcul Drumul Taberei", "București", 44.4225, 26.0330, 50, "Cunoscut și ca Parcul Moghioroș, revitalizat cu poduri cochete și sere moderne.", false, false),
+        TouristSpot(1022, "Palatul Mogoșoaia", "București", 44.5275, 25.9930, 100, "O clădire istorică în stil brâncovenesc deosebit, situată în exteriorul orașului.", false, false),
+        TouristSpot(1023, "Muzeul de Artă Contemporană (MNAC)", "București", 44.4270, 26.0845, 75, "Situat în aripa din spate a Palatului Parlamentului, cu expoziții avangardiste.", false, false),
+        TouristSpot(1024, "Piața Universității", "București", 44.4355, 26.1025, 30, "Kilometrul zero al democrației bucureștene, încadrat de clădiri universitare emblematice.", false, false),
+        TouristSpot(1025, "Opera Națională București", "București", 44.4345, 26.0790, 90, "Clădire istorică neoclasică, faimos centru de cultură pentru spectacole lirice și balet.", false, false)
     )
 
     // Bus Stations for Cluj-Napoca
@@ -157,21 +176,41 @@ object TransitNetwork {
 
     // Preset Tourist spots for Cluj-Napoca
     val CLUJ_PRESETS = listOf(
-        TouristSpot(2001, "Grădina Botanică Alexandru Borza", "Cluj-Napoca", 46.7592, 23.5867, 90, "Oază magnifică de verdeață ce adăpostește plante rare și o grădină japoneză.", false, true),
-        TouristSpot(2002, "Parcul Central Simion Bărnuțiu", "Cluj-Napoca", 46.7691, 23.5786, 60, "Parcul istoric central cu un lac superb de plimbări cu barca și Casino.", false, true),
-        TouristSpot(2003, "Piața Unirii & Biserica Sf. Mihail", "Cluj-Napoca", 46.7689, 23.5898, 65, "Piața istorică principală delimitată de monumentala catedrală gotică.", false, true),
-        TouristSpot(2004, "Catedrala Mitropolitană & Piața Avram Iancu", "Cluj-Napoca", 46.7702, 23.5964, 45, "Catedrală ortodoxă impunătoare și piațetă cu fântâni arteziene animate.", false, true),
-        TouristSpot(2005, "Dealul Cetățuia", "Cluj-Napoca", 46.7772, 23.5841, 75, "O panoramă spectaculoasă a întregului oraș, ideală la apus de soare.", false, true)
+        TouristSpot(2001, "Grădina Botanică Alexandru Borza", "Cluj-Napoca", 46.7592, 23.5867, 90, "Oază magnifică de verdeață ce adăpostește plante rare și o grădină japoneză.", false, false),
+        TouristSpot(2002, "Parcul Central Simion Bărnuțiu", "Cluj-Napoca", 46.7691, 23.5786, 60, "Parcul istoric central cu un lac superb de plimbări cu barca și Casino.", false, false),
+        TouristSpot(2003, "Piața Unirii & Biserica Sf. Mihail", "Cluj-Napoca", 46.7689, 23.5898, 65, "Piața istorică principală delimitată de monumentala catedrală gotică.", false, false),
+        TouristSpot(2004, "Catedrala Mitropolitană & Piața Avram Iancu", "Cluj-Napoca", 46.7702, 23.5964, 45, "Catedrală ortodoxă impunătoare și piațetă cu fântâni arteziene animate.", false, false),
+        TouristSpot(2005, "Dealul Cetățuia", "Cluj-Napoca", 46.7772, 23.5841, 75, "O panoramă spectaculoasă a întregului oraș, ideală la apus de soare.", false, false),
+        TouristSpot(2006, "Muzeul de Artă & Palatul Bánffy", "Cluj-Napoca", 46.7701, 23.5910, 50, "Palat baroc splendid ce găzduiește colecții naționale valoroase de artă.", false, false),
+        TouristSpot(2007, "Parcul Romulus Vuia (Etnografic)", "Cluj-Napoca", 46.7775, 23.5550, 120, "Primul muzeu în aer liber din România cu gospodării tradiționale transilvănene.", false, false),
+        TouristSpot(2008, "Bastionul Croitorilor", "Cluj-Napoca", 46.7675, 23.5960, 30, "Unul dintre puțele turnuri de apărare care s-au păstrat intacte din vechea cetate.", false, false),
+        TouristSpot(2009, "Parcul Iulius (Lacul Gheorgheni)", "Cluj-Napoca", 46.7725, 23.6235, 60, "Zonă modernă de recreere în jurul lacului, plină de spații verzi și pontoane.", false, false),
+        TouristSpot(2010, "Piața Muzeului", "Cluj-Napoca", 46.7716, 23.5878, 40, "Cea mai veche piață din Cluj-Napoca, flancată de Biserica Franciscană.", false, false),
+        TouristSpot(2011, "Pădurea Hoia-Baciu", "Cluj-Napoca", 46.7740, 23.5220, 120, "Pădure faimoasă la nivel mondial pentru peisajele sale misterioase și legende.", false, false),
+        TouristSpot(2012, "The Office Cluj & Podul de Fier", "Cluj-Napoca", 46.7766, 23.6065, 30, "O zonă modernă vibrantă, îmbinând arhitectura de birouri cu malul Someșului.", false, false),
+        TouristSpot(2013, "Teatrul Național și Opera Română", "Cluj-Napoca", 46.7700, 23.5971, 45, "Clădire neobarocă superbă destinată spectacolelor lirice și teatrale.", false, false),
+        TouristSpot(2014, "Turnul Pompierilor", "Cluj-Napoca", 46.7732, 23.5898, 40, "Turn istoric reabilitat recent cu o platformă panoramică superbă.", false, false),
+        TouristSpot(2015, "Parcul Cetățuia Buburuza", "Cluj-Napoca", 46.7795, 23.5805, 50, "Zonă adiacentă cetățuii cu alei umbroase, spații de joacă și belvedere retras.", false, false),
+        TouristSpot(2016, "Muzeul Național de Istorie a Transilvaniei", "Cluj-Napoca", 46.7720, 23.5870, 75, "Colecții arheologice valoroase despre istoria antică, romană și medievală a Transilvaniei.", false, false),
+        TouristSpot(2017, "Biserica Reformată de pe ulița Lupilor", "Cluj-Napoca", 46.7675, 23.5935, 45, "O clădire monument istoric gotic de tip sală, una dintre cele mai vaste din Europa de Est.", false, false),
+        TouristSpot(2018, "Cluj Arena", "Cluj-Napoca", 46.7685, 23.5720, 45, "Cel mai modern stadion multifuncțional din inima Transilvaniei, cu o arhitectură high-tech.", false, false),
+        TouristSpot(2019, "BT Arena (Sala Polivalentă)", "Cluj-Napoca", 46.7675, 23.5700, 40, "Cea mai mare sală polivalentă din România, găzduiește concerte mari și evenimente sportive.", false, false),
+        TouristSpot(2020, "Parcul Rozelor", "Cluj-Napoca", 46.7615, 23.5595, 50, "Parc renumit pentru sutele de soiuri de trandafiri și faleza liniștită pe malul Someșului.", false, false),
+        TouristSpot(2021, "Biserica Calvaria (Mănăștur)", "Cluj-Napoca", 46.7588, 23.5570, 45, "O veche mănăstire benedictină fortificată, fiind una dintre cele mai bătrâne biserici din Cluj.", false, false),
+        TouristSpot(2022, "Catedrala Greco-Catolică Sf. Iosif (Cipariu)", "Cluj-Napoca", 46.7650, 23.5990, 40, "Catedrală monumentală cu design modern magnific, aflată în Piața Cipariu.", false, false),
+        TouristSpot(2023, "Observatorul Astronomic", "Cluj-Napoca", 46.7565, 23.5885, 60, "Situat în campusul USAMV, ideal pentru explorarea stelelor și activități educaționale.", false, false),
+        TouristSpot(2024, "Campusul Istoric USAMV", "Cluj-Napoca", 46.7610, 23.5725, 45, "Grădini, livezi istorice și oază verde extinsă în una dintre faimoasele universități clujene.", false, false),
+        TouristSpot(2025, "Cetatea Fetei Florești", "Cluj-Napoca", 46.7320, 23.4910, 90, "Loc istoric plin de mister situat pe deal, înconjurat de pădure, ideal pentru drumeții.", false, false)
     )
 
     // Bus Stations for Brașov
     val BRASOV_STATIONS = listOf(
         BusStation("SBV_GARA", "Gara Brașov", 45.6611, 25.6111),
-        BusStation("SBV_SANITAS", "Stația Sanitas", 45.6495, 25.6030),
-        BusStation("SBV_PRIMARIE", "Stația Primărie", 45.6444, 25.6001),
-        BusStation("SBV_LIVADA", "Livada Poștei", 45.6465, 25.5895),
-        BusStation("SBV_BISERICA", "Biserica Neagră", 45.6420, 25.5880),
-        BusStation("SBV_SCHEI", "Poarta Șchei", 45.6395, 25.5855)
+        BusStation("SBV_SANITAS", "Stația Sanitas", 45.6480, 25.6010),
+        BusStation("SBV_PRIMARIE", "Stația Primărie", 45.6450, 25.5990),
+        BusStation("SBV_LIVADA", "Stația Livada Poștei", 45.6435, 25.5925),
+        BusStation("SBV_NEAGRA", "Stația Biserica Neagră", 45.6418, 25.5878),
+        BusStation("SBV_SCHEI", "Stația Poarta Șchei", 45.6394, 25.5858)
     )
 
     // Bus Lines for Brașov
@@ -199,19 +238,39 @@ object TransitNetwork {
 
     // Preset Tourist spots for Brașov
     val BRASOV_PRESETS = listOf(
-        TouristSpot(3001, "Biserica Neagră", "Brașov", 45.6418, 25.5878, 45, "Cea mai mare biserică gotică din sud-estul Europei.", false, true),
-        TouristSpot(3002, "Piața Sfatului", "Brașov", 45.6425, 25.5890, 60, "Piața istorică principală din Brașov, plină de farmec și cafenele.", false, true),
-        TouristSpot(3003, "Telecabina Tâmpa", "Brașov", 45.6390, 25.5940, 90, "Telecabina spre muntele Tâmpa cu panoramă excelentă a orașului.", false, true),
-        TouristSpot(3004, "Turnul Alb", "Brașov", 45.6448, 25.5862, 35, "Turn istoric de apărare oferind o vedere spectaculoasă la înălțime.", false, true),
-        TouristSpot(3005, "Poarta Șchei", "Brașov", 45.6394, 25.5858, 20, "Poartă barocă superbă ce duce spre vechiul cartier românesc.", false, true)
+        TouristSpot(3001, "Biserica Neagră", "Brașov", 45.6418, 25.5878, 45, "Cea mai mare biserică gotică din sud-estul Europei.", false, false),
+        TouristSpot(3002, "Piața Sfatului", "Brașov", 45.6425, 25.5890, 60, "Piața istorică principală din Brașov, plină de farmec și cafenele.", false, false),
+        TouristSpot(3003, "Telecabina Tâmpa", "Brașov", 45.6390, 25.5940, 90, "Telecabina spre muntele Tâmpa cu panoramă excelentă a orașului.", false, false),
+        TouristSpot(3004, "Turnul Alb", "Brașov", 45.6448, 25.5862, 35, "Turn istoric de apărare oferind o vedere spectaculoasă la înălțime.", false, false),
+        TouristSpot(3005, "Poarta Șchei", "Brașov", 45.6394, 25.5858, 20, "Poartă barocă superbă ce duce spre vechiul cartier românesc.", false, false),
+        TouristSpot(3006, "Turnul Negru", "Brașov", 45.6436, 25.5862, 30, "Turn de strajă din secolul al XV-lea cu vedere panoramică spre Biserica Neagră.", false, false),
+        TouristSpot(3007, "Bastionul Țesătorilor", "Brașov", 45.6378, 25.5880, 45, "Unul dintre cele mai bine conservate bastioane medievale, adăpostind o machetă rară.", false, false),
+        TouristSpot(3008, "Strada Sforii", "Brașov", 45.6410, 25.5885, 15, "Una dintre cele mai înguste străzi din Europa, un reper fotografic iconic.", false, false),
+        TouristSpot(3009, "Prima Școală Românească", "Brașov", 45.6362, 25.5818, 60, "Situată în Șchei, locul unde s-au tipărit primele cărți în limba română.", false, false),
+        TouristSpot(3010, "Poarta Ecaterinei", "Brașov", 45.6398, 25.5855, 20, "Singura poartă medievală de acces în cetate păstrată în forma sa originală.", false, false),
+        TouristSpot(3011, "Parcul Central Nicolae Titulescu", "Brașov", 45.6455, 25.6025, 40, "Un park mare și liniștit în centrul orașului cu alei largi și fântâni.", false, false),
+        TouristSpot(3012, "Bastionul Graft", "Brașov", 45.6450, 25.5860, 30, "Bastion fortificat pitoresc deasupra pârâului Graft, legat de Turnul Alb.", false, false),
+        TouristSpot(3013, "Muzeul de Artă Brașov", "Brașov", 45.6460, 25.6015, 45, "Expoziție de pictură și sculptură românească valoroasă, aproape de primărie.", false, false),
+        TouristSpot(3014, "Pietrele lui Solomon", "Brașov", 45.6178, 25.5615, 120, "Zonă naturală de chei spectaculoase cu spații verzi pentru recreere.", false, false),
+        TouristSpot(3015, "Cetățuia de pe Strajă", "Brașov", 45.6482, 25.5930, 60, "Fortăreață istorică pe dealul Strajă, monument istoric de importanță națională.", false, false),
+        TouristSpot(3016, "Turnul Măcelarilor", "Brașov", 45.6385, 25.5890, 35, "Turn vechi de apărare din secolul al XV-lea, parte integrantă din fortificații.", false, false),
+        TouristSpot(3017, "Bastionul Cojocarilor", "Brașov", 45.6390, 25.5905, 40, "Bastion istoric ridicat pe latura de sud a cetății sub muntele Tâmpa.", false, false),
+        TouristSpot(3018, "Sinagoga Neologă din Brașov", "Brașov", 45.6412, 25.5870, 30, "O clădire religioasă splendidă în stil bizantin, cu detalii decorative fermecătoare.", false, false),
+        TouristSpot(3019, "Casa Sfatului (Muzeul de Istorie)", "Brașov", 45.6426, 25.5888, 50, "Simbolul central al orașului Brașov, fostul sediu administrativ medieval.", false, false),
+        TouristSpot(3020, "Biserica Sfântul Nicolae", "Brașov", 45.6358, 25.5812, 45, "O biserică orthodoxă impunătoare din Șchei, fondată în secolul al XIII-lea.", false, false),
+        TouristSpot(3021, "Promenada de sub Tâmpa", "Brașov", 45.6395, 25.5915, 60, "Aleea pietonală umbroasă Tiberiu Brediceanu, perfectă pentru plimbări relaxante pe sub pădure.", false, false),
+        TouristSpot(3022, "Turnul Lemnarilor", "Brașov", 45.6380, 25.5885, 30, "Turn istoric restaurat cochet, găzduiește expoziții de sculptură și ateliere de artă.", false, false),
+        TouristSpot(3023, "Cartierul Istoric Șchei", "Brașov", 45.6330, 25.5750, 90, "Explorare pe străduțele vechi și întortocheate, inima spiritului românesc brașovean.", false, false),
+        TouristSpot(3024, "Grădina Zoologică Brașov (Noua)", "Brașov", 45.6175, 25.6425, 90, "Una dintre cele mai moderne grădini zoologice din țară, amplasată în pădurea Noua.", false, false),
+        TouristSpot(3025, "Lacul Noua & Parc Agrement", "Brașov", 45.6190, 25.6410, 80, "Zonă superbă de relaxare cu bărci, pontoane, terenuri de sport și un aer minunat de munte.", false, false)
     )
 
     // Default Starting places based on city
     fun getStartSpot(city: String): TouristSpot {
         return when (city) {
-            "București" -> TouristSpot(-1, "Gara de Nord (Hotel/Start)", "București", 44.4468, 26.0725, 0, "Punctul de pornire al călătoriei.", false, true)
-            "Brașov" -> TouristSpot(-1, "Gara Brașov (Hotel/Start)", "Brașov", 45.6611, 25.6111, 0, "Punctul de pornire al călătoriei.", false, true)
-            else -> TouristSpot(-1, "Gara Cluj-Napoca (Hotel/Start)", "Cluj-Napoca", 46.7865, 23.5875, 0, "Punctul de pornire al călătoriei.", false, true)
+            "București" -> TouristSpot(-1, "Gara de Nord (Hotel/Start)", "București", 44.4468, 26.0725, 0, "Punctul de pornire al călătoriei.", false, false)
+            "Brașov" -> TouristSpot(-1, "Gara Brașov (Hotel/Start)", "Brașov", 45.6611, 25.6111, 0, "Punctul de pornire al călătoriei.", false, false)
+            else -> TouristSpot(-1, "Gara Cluj-Napoca (Hotel/Start)", "Cluj-Napoca", 46.7865, 23.5875, 0, "Punctul de pornire al călătoriei.", false, false)
         }
     }
 
@@ -319,7 +378,7 @@ object TransitNetwork {
                     }
                 }
                 
-                if (matchingLine != null) {
+                if (matchingLine != null && nearestStationToFrom != null && nearestStationToTo != null) {
                     // We found a direct bus line!
                     // Let's create legs: Walk to station -> Bus ride -> Walk to Spot
                     val walkMeters1 = distToStationFrom.toInt()
@@ -328,7 +387,7 @@ object TransitNetwork {
                         legs.add(
                             RouteLeg(
                                 fromPlaceName = from.name,
-                                toPlaceName = nearestStationToFrom!!.name,
+                                toPlaceName = nearestStationToFrom.name,
                                 type = LegType.WALK,
                                 distanceMeters = walkMeters1,
                                 durationMinutes = walkTime1,
@@ -341,7 +400,7 @@ object TransitNetwork {
                     // Bus journey
                     val stationsInBetween = abs(toIndex - fromIndex)
                     val busRideDuration = stationsInBetween * 4 + 2 // 4 min per station average + buffer
-                    val busMeters = (calculateDistance(nearestStationToFrom!!.latitude, nearestStationToFrom.longitude, nearestStationToTo!!.latitude, nearestStationToTo.longitude)).toInt()
+                    val busMeters = (calculateDistance(nearestStationToFrom.latitude, nearestStationToFrom.longitude, nearestStationToTo.latitude, nearestStationToTo.longitude)).toInt()
                     legs.add(
                         RouteLeg(
                             fromPlaceName = nearestStationToFrom.name,

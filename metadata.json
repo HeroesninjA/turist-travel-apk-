@@ -1,6 +1,6 @@
 {
   "name": "BusTour Optimizer",
-  "description": "Optimizează traseele turistice și recomandă cele mai rapide combinații de autobuz pentru a economisi timp.",
+  "description": "Optimize tourist routes with real-time transit schedules and coordinates in major Romanian cities, featuring bilingual English/Romanian toggles and a Gemini AI-powered travel guide.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
