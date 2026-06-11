@@ -10,6 +10,7 @@ import com.example.data.TestingLog
 import com.example.data.api.GeminiRepository
 import com.example.domain.OptimizedJourney
 import com.example.domain.TransitNetwork
+import com.example.domain.LegType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -32,6 +33,41 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val spotDao = database.touristSpotDao()
     private val itineraryDao = database.savedItineraryDao()
     private val testingLogDao = database.testingLogDao()
+
+    // Settings & API preferences
+    private val prefs = application.getSharedPreferences("bus_tour_prefs", android.content.Context.MODE_PRIVATE)
+
+    private val _openaiApiKey = MutableStateFlow(prefs.getString("openai_api_key", "") ?: "")
+    val openaiApiKey: StateFlow<String> = _openaiApiKey.asStateFlow()
+
+    private val _openrouterApiKey = MutableStateFlow(prefs.getString("openrouter_api_key", "") ?: "")
+    val openrouterApiKey: StateFlow<String> = _openrouterApiKey.asStateFlow()
+
+    private val _openrouterModel = MutableStateFlow(prefs.getString("openrouter_model", "google/gemma-2-9b-it:free") ?: "google/gemma-2-9b-it:free")
+    val openrouterModel: StateFlow<String> = _openrouterModel.asStateFlow()
+
+    private val _aiProvider = MutableStateFlow(prefs.getString("ai_provider", "GEMINI") ?: "GEMINI")
+    val aiProvider: StateFlow<String> = _aiProvider.asStateFlow()
+
+    fun updateOpenAiApiKey(apiKey: String) {
+        _openaiApiKey.value = apiKey
+        prefs.edit().putString("openai_api_key", apiKey).apply()
+    }
+
+    fun updateOpenRouterApiKey(apiKey: String) {
+        _openrouterApiKey.value = apiKey
+        prefs.edit().putString("openrouter_api_key", apiKey).apply()
+    }
+
+    fun updateOpenRouterModel(model: String) {
+        _openrouterModel.value = model
+        prefs.edit().putString("openrouter_model", model).apply()
+    }
+
+    fun updateAiProvider(provider: String) {
+        _aiProvider.value = provider
+        prefs.edit().putString("ai_provider", provider).apply()
+    }
 
     // Screen States
     private val _selectedCity = MutableStateFlow("București")
@@ -58,12 +94,40 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val savedItineraries: StateFlow<List<SavedItinerary>> = itineraryDao.getAllSavedItinerariesFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Route Optimization Preferences
+    private val _routingPreference = MutableStateFlow<String>("DEFAULT")
+    val routingPreference: StateFlow<String> = _routingPreference.asStateFlow()
+
+    private val _enabledTransitModes = MutableStateFlow<Set<LegType>>(
+        setOf(LegType.WALK, LegType.BUS, LegType.METRO, LegType.TROLLEY, LegType.TRAIN, LegType.TAXI)
+    )
+    val enabledTransitModes: StateFlow<Set<LegType>> = _enabledTransitModes.asStateFlow()
+
+    fun updateRoutingPreference(preference: String) {
+        _routingPreference.value = preference
+    }
+
+    fun toggleTransitMode(mode: LegType) {
+        val current = _enabledTransitModes.value
+        _enabledTransitModes.value = if (current.contains(mode)) {
+            if (current.size <= 1) current else current - mode
+        } else {
+            current + mode
+        }
+    }
+
     // Transit journey calculated locally
-    val optimizedJourney: StateFlow<OptimizedJourney?> = combine(citySpots, selectedCity, customStartSpot) { spots, city, customStart ->
+    val optimizedJourney: StateFlow<OptimizedJourney?> = combine(
+        citySpots, 
+        selectedCity, 
+        customStartSpot,
+        routingPreference,
+        enabledTransitModes
+    ) { spots, city, customStart, pref, modes ->
         val start = customStart ?: TransitNetwork.getStartSpot(city)
         val selectedSpots = spots.filter { it.isSelected }
         if (selectedSpots.isNotEmpty()) {
-            TransitNetwork.optimizePath(start, selectedSpots, city)
+            TransitNetwork.optimizePath(start, selectedSpots, city, pref, modes)
         } else {
             null
         }
@@ -269,10 +333,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     init {
+        viewModelScope.launch {
+            optimizedJourney.collectLatest { journey ->
+                if (journey != null && _aiRecommendation.value.isNotEmpty() && !_aiRecommendation.value.startsWith("Se generează") && !_aiRecommendation.value.startsWith("Generating") && !_aiRecommendation.value.startsWith("⚠️")) {
+                     _aiRecommendation.value = "" // Clear so it auto-regenerates when reaching the tab
+                }
+            }
+        }
         // Pre-populate database with default cities values if empty
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                if (spotDao.getSpotsByCity("București").isEmpty()) {
+                val currentBucurestiCount = spotDao.getSpotsByCity("București").count { !it.isCustom }
+                if (currentBucurestiCount < TransitNetwork.BUCURESTI_PRESETS.size) {
                     spotDao.insertSpots(TransitNetwork.BUCURESTI_PRESETS)
                 }
                 if (spotDao.getSpotsByCity("Cluj-Napoca").isEmpty()) {
@@ -280,6 +352,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 if (spotDao.getSpotsByCity("Brașov").isEmpty()) {
                     spotDao.insertSpots(TransitNetwork.BRASOV_PRESETS)
+                }
+                if (spotDao.getSpotsByCity("Câmpina").isEmpty()) {
+                    spotDao.insertSpots(TransitNetwork.CAMPINA_PRESETS)
+                }
+
+                // Ensure at least some default spots are selected for all cities so users have a beautiful out-of-the-box experience
+                val cities = listOf("București", "Cluj-Napoca", "Brașov", "Câmpina")
+                cities.forEach { city ->
+                    val spots = spotDao.getSpotsByCity(city)
+                    if (spots.isNotEmpty() && spots.count { it.isSelected } == 0) {
+                        spots.take(3).forEach { spot ->
+                            spotDao.updateSelection(spot.id, true)
+                        }
+                    }
                 }
             }
         }
@@ -289,6 +375,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _selectedCity.value = city
         _customStartSpot.value = null // reset custom start spot for the new city
         _aiRecommendation.value = ""
+
+        // Auto-select the first 3 spots if absolutely none are selected for this city
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                val currentSpots = spotDao.getSpotsByCity(city)
+                if (currentSpots.isNotEmpty() && currentSpots.count { it.isSelected } == 0) {
+                    currentSpots.take(3).forEach { spot ->
+                        spotDao.updateSelection(spot.id, true)
+                    }
+                }
+            }
+        }
     }
 
     fun addCustomTouristSpot(name: String, description: String, lat: Double, lng: Double, duration: Int) {
@@ -329,12 +427,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _customStartSpot.value = null // reset custom starting point to default
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                val spots = spotDao.getSpotsByCity(_selectedCity.value)
-                spots.forEach { spot ->
-                    if (spot.isSelected) {
-                        spotDao.updateSelection(spot.id, false)
-                    }
-                }
+                spotDao.deselectAllSpotsForCity(_selectedCity.value)
             }
         }
     }
@@ -384,6 +477,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun clearAllSavedItineraries() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                itineraryDao.deleteAllItineraries()
+            }
+        }
+    }
+
     fun clearAllCustomCurrentCity() {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
@@ -393,7 +494,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun askGeminiForItinerary(isEnglish: Boolean = false) {
-        val journey = optimizedJourney.value ?: return
+        val journey = optimizedJourney.value
+        if (journey == null) {
+            _aiRecommendation.value = if (isEnglish) {
+                "⚠️ **No Selected Attractions Found!**\n\nPlease go to the **'Spots'** (Obiective) or **'Map'** (Hartă) tab and **include (select) tourist attractions** using the switches or buttons, then click generate again."
+            } else {
+                "⚠️ **Niciun obiectiv selectat!**\n\nTe rugăm să mergi la fila **'Obiective'** sau **'Hartă'** și să **selectezi (bifezi) puncte turistice** de vizitat (apasă butonul Include sau bifează caseta), apoi apasă din nou pe generare."
+            }
+            return
+        }
         val currentCityName = _selectedCity.value
         val attractions = journey.orderedSpots.map { spot ->
             val name = if (isEnglish) translateSpotNameInVm(spot.name) else spot.name
@@ -409,10 +518,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             _isAiLoading.value = true
+            val provider = _aiProvider.value
             _aiRecommendation.value = if (isEnglish) {
-                "Generating AI travel guide with Gemini 3.5 Flash... Please wait..."
+                "Generating AI travel guide with $provider... Please wait..."
             } else {
-                "Se generează optimizarea AI cu Gemini 3.5 Flash... Vă rugăm să așteptați..."
+                "Se generează optimizarea AI cu $provider... Vă rugăm să așteptați..."
             }
             
             try {
@@ -423,14 +533,41 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     "${weather.tempCelsius}°C - ${weather.conditionRo}. Recomandare: ${weather.adviceRo}"
                 }
                 val recommendation = withContext(Dispatchers.IO) {
-                    GeminiRepository.generateTravelItinerary(
-                        city = currentCityName,
-                        attractions = attractions,
-                        busLines = lines,
-                        startSpot = startLocName,
-                        isEnglish = isEnglish,
-                        weatherInfoText = weatherText
-                    )
+                    when (provider) {
+                        "OPENAI" -> {
+                            com.example.data.api.OpenAiRepository.generateTravelItinerary(
+                                apiKey = _openaiApiKey.value,
+                                city = currentCityName,
+                                attractions = attractions,
+                                busLines = lines,
+                                startSpot = startLocName,
+                                isEnglish = isEnglish,
+                                weatherInfoText = weatherText
+                            )
+                        }
+                        "OPENROUTER" -> {
+                            com.example.data.api.OpenRouterRepository.generateTravelItinerary(
+                                apiKey = _openrouterApiKey.value,
+                                model = _openrouterModel.value,
+                                city = currentCityName,
+                                attractions = attractions,
+                                busLines = lines,
+                                startSpot = startLocName,
+                                isEnglish = isEnglish,
+                                weatherInfoText = weatherText
+                            )
+                        }
+                        else -> {
+                            GeminiRepository.generateTravelItinerary(
+                                city = currentCityName,
+                                attractions = attractions,
+                                busLines = lines,
+                                startSpot = startLocName,
+                                isEnglish = isEnglish,
+                                weatherInfoText = weatherText
+                            )
+                        }
+                    }
                 }
                 _aiRecommendation.value = recommendation
             } catch (e: Exception) {
@@ -647,6 +784,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 testingLogDao.clearLogsByCity(_selectedCity.value)
+            }
+        }
+    }
+
+    fun factoryResetData() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                spotDao.deleteAllCustomSpots()
+                itineraryDao.deleteAllItineraries()
+                testingLogDao.deleteAllLogs()
             }
         }
     }

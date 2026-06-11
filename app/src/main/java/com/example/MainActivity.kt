@@ -20,14 +20,10 @@ class MainActivity : ComponentActivity() {
     setContent {
       MyApplicationTheme {
         val viewModel: AppViewModel = viewModel()
-        Scaffold(
+        MainScreen(
+          viewModel = viewModel,
           modifier = Modifier.fillMaxSize()
-        ) { innerPadding ->
-          MainScreen(
-            viewModel = viewModel,
-            modifier = Modifier.padding(innerPadding)
-          )
-        }
+        )
       }
     }
   }

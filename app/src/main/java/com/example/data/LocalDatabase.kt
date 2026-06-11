@@ -65,8 +65,14 @@ interface TouristSpotDao {
     @Query("DELETE FROM tourist_spots WHERE isCustom = 1 AND city = :city")
     suspend fun clearCustomSpotsByCity(city: String)
 
+    @Query("DELETE FROM tourist_spots WHERE isCustom = 1")
+    suspend fun deleteAllCustomSpots()
+
     @Query("UPDATE tourist_spots SET isSelected = :isSelected WHERE id = :id")
     suspend fun updateSelection(id: Long, isSelected: Boolean)
+
+    @Query("UPDATE tourist_spots SET isSelected = 0 WHERE city = :city")
+    suspend fun deselectAllSpotsForCity(city: String)
 }
 
 @Dao
@@ -79,6 +85,9 @@ interface SavedItineraryDao {
 
     @Query("DELETE FROM saved_itineraries WHERE id = :id")
     suspend fun deleteItineraryById(id: Long)
+
+    @Query("DELETE FROM saved_itineraries")
+    suspend fun deleteAllItineraries()
 }
 
 @Dao
@@ -94,6 +103,9 @@ interface TestingLogDao {
 
     @Query("DELETE FROM testing_logs WHERE city = :city")
     suspend fun clearLogsByCity(city: String)
+
+    @Query("DELETE FROM testing_logs")
+    suspend fun deleteAllLogs()
 }
 
 @Database(entities = [TouristSpot::class, SavedItinerary::class, TestingLog::class], version = 3, exportSchema = false)
@@ -150,6 +162,31 @@ fun TouristSpot.translate(isEnglish: Boolean): TouristSpot {
         "Muzeul de Artă Contemporană (MNAC)" -> "National Museum of Contemporary Art"
         "Piața Universității" -> "University Square"
         "Opera Națională București" -> "Bucharest National Opera"
+        "Parcul Alexandru Ioan Cuza (IOR)" -> "Alexandru Ioan Cuza (IOR) Park"
+        "Therme București" -> "Therme Bucharest"
+        "Palatul Șuțu (Muzeul Bucureștiului)" -> "Sutu Palace (Bucharest History Museum)"
+        "Teatrul Național I.L. Caragiale" -> "I.L. Caragiale National Theatre"
+        "Observatorul Astronomic Vasile Urseanu" -> "Vasile Urseanu Astronomical Observatory"
+        "Parcul Kiseleff" -> "Kiseleff Park"
+        "Palatul Cantacuzino" -> "Cantacuzino Palace"
+        "Pasajul Macca-Vilacrosse" -> "Macca-Vilacrosse Passage"
+        "Palatul CEC" -> "CEC Palace"
+        "Muzeul Colecțiilor de Artă" -> "Museum of Art Collections"
+        "Palatul Justiției" -> "Palace of Justice"
+        "Palatul Patriarhiei" -> "Patriarchal Palace"
+        "Muzeul Militar Național" -> "National Military Museum"
+        "Arena Națională" -> "National Arena"
+        "Muzeul Național al Literaturii Române" -> "National Museum of Romanian Literature"
+        "Palatul Kretzulescu" -> "Kretzulescu Palace"
+        "Biserica Kretzulescu" -> "Kretzulescu Church"
+        "Muzeul Tehnic Dimitrie Leonida" -> "Dimitrie Leonida Technical Museum"
+        "Palatul Primăriei Capitalei" -> "Bucharest City Hall Palace"
+        "Turnul de Artă (Pantelimon)" -> "Art Tower (Pantelimon)"
+        "Muzeul Național al Hărților și Cărții Vechi" -> "National Museum of Maps and Old Books"
+        "Parcul Plumbuita" -> "Plumbuita Park"
+        "Parcul Circului de Stat" -> "State Circus Park"
+        "Palatul Ghica Tei" -> "Ghica Tei Palace"
+        "Cimitirul Bellu" -> "Bellu Cemetery"
         // Cluj-Napoca presets:
         "Grădina Botanică Alexandru Borza" -> "Borza Botanical Garden"
         "Parcul Central Simion Bărnuțiu" -> "Central Park (Cluj)"
@@ -202,10 +239,21 @@ fun TouristSpot.translate(isEnglish: Boolean): TouristSpot {
         "Cartierul Istoric Șchei" -> "Schei Historic District"
         "Grădina Zoologică Brașov (Noua)" -> "Brasov Zoo (Noua)"
         "Lacul Noua & Parc Agrement" -> "Noua Lake & Leisure Park"
+        // Campina presets
+        "Castelul \"Iulia Hasdeu\"" -> "Iulia Hasdeu Castle"
+        "Muzeul Memorial \"Nicolae Grigorescu\"" -> "Nicolae Grigorescu Memorial Museum"
+        "Casa de Cultură Câmpina" -> "Câmpina House of Culture"
+        "Primăria Câmpina" -> "Câmpina City Hall"
+        "Biserica de Lemn \"Adormirea Maicii Domnului\"" -> "Wood Church of Dormition"
+        "Capela în stil Gotic \"Hernea\"" -> "Hernea Gothic Chapel"
+        "Bulevardul Culturii (Aleea cu Platani)" -> "Culture Boulevard (Planet Avenue)"
+        "Fântâna cu Cireși & Dealul Muscel" -> "Cherry Well & Muscel Hill"
+        "Lacul Câmpina (Lacul Peștelui)" -> "Campina Lake (Fish Lake)"
         // Starting points
         "Gara de Nord (Hotel/Start)" -> "North Station (Hotel/Start)"
         "Gara Brașov (Hotel/Start)" -> "Brasov Station (Hotel/Start)"
         "Gara Cluj-Napoca (Hotel/Start)" -> "Cluj Station (Hotel/Start)"
+        "Gara Câmpina (Hotel/Start)" -> "Câmpina Station (Hotel/Start)"
         "Gara de Nord (Hotel/Start)" -> "North Station (Hotel/Start)"
         "Hotel / Start Personalizat" -> "Hotel / Custom Start"
         else -> name
@@ -236,6 +284,31 @@ fun TouristSpot.translate(isEnglish: Boolean): TouristSpot {
         "Muzeul de Artă Contemporană (MNAC)" -> "Modern art exhibitions located in the back wing of Parliament Palace."
         "Piața Universității" -> "The historic center-point of Bucharest surrounded by beautiful architecture."
         "Opera Națională București" -> "Traditional neoclassical complex hosting opera and ballet recitals."
+        "Parcul Alexandru Ioan Cuza (IOR)" -> "One of the cleanest and most beautiful parks in the capital, centered around Titan Lake."
+        "Therme București" -> "The largest thermal wellness and entertainment center in Europe, located in the north."
+        "Palatul Șuțu (Muzeul Bucureștiului)" -> "A gorgeous neogothic palace hosting the history of the capital right at University Square."
+        "Teatrul Național I.L. Caragiale" -> "The epicenter of performing arts in Romania, an architectural masterpiece with a red roof."
+        "Observatorul Astronomic Vasile Urseanu" -> "A gorgeous historic villa equipped with an observation dome where you can admire stars and planets."
+        "Parcul Kiseleff" -> "A romantic historic oasis along Kiseleff Boulevard, full of unique sculptures and ancient trees."
+        "Palatul Cantacuzino" -> "An impressive French style Art Nouveau jewel with eclectic details, celebrating George Enescu."
+        "Pasajul Macca-Vilacrosse" -> "A delightful yellow glass-covered arcade hosting cozy cafes, hookah bars, and historic vibes."
+        "Palatul CEC" -> "An exquisite 19th-century French eclectic monument with an imposing glass and steel dome."
+        "Muzeul Colecțiilor de Artă" -> "The former Romanit Palace on Victory Avenue, holding rich Romanian, European, and Oriental art collections."
+        "Palatul Justiției" -> "A massive landmark on the banks of Dambovita, built in the French Renaissance revival style, serving as the historical courthouse."
+        "Palatul Patriarhiei" -> "An orthodox spiritual center on Metropolitan Hill, a monumental landmark fully restored."
+        "Muzeul Militar Național" -> "A collection of military history including vintage uniforms, weaponry, and aviation pieces."
+        "Arena Națională" -> "The largest stadium in Romania, a modern sports jewel with a retractable panoramic roof."
+        "Muzeul Național al Literaturii Române" -> "An state-of-the-art cultural space dedicated to historical manuscripts, old books, and great poets."
+        "Palatul Kretzulescu" -> "A elegant eclectic building designed by Petre Antonescu, bordering Cismigiu Gardens."
+        "Biserica Kretzulescu" -> "A historic red brick church next to Revolution Square, built in authentic Brancovenesc style."
+        "Muzeul Tehnic Dimitrie Leonida" -> "A remarkable museum of vintage innovation, retro cars, and steam engines in Carol Park."
+        "Palatul Primăriei Capitalei" -> "The administrative headquarters built by Petre Antonescu in neoromanian style opposite Cismigiu."
+        "Turnul de Artă (Pantelimon)" -> "A repurposed 37-meter former water tower with a spiral staircase, now a vibrant alternative art hub."
+        "Muzeul Național al Hărților și Cărții Vechi" -> "An elegant villa in the north which holds fascinating collections of historical maps."
+        "Parcul Plumbuita" -> "A historic public park set around a fortified monastery built by ruler Mihnea Turcitul."
+        "Parcul Circului de Stat" -> "A unique garden famous for its rare pink lotus flowers, cozy paths, and the State Circus."
+        "Palatul Ghica Tei" -> "A lavish 19th-century summer residence of ruler Grigore Dimitrie Ghica on the lake shore."
+        "Cimitirul Bellu" -> "An open-air museum of sculpture, the pantheon of the most brilliant minds of Romania."
         "Grădina Botanică Alexandru Borza" -> "A beautiful botanical garden hosting Japanese gardens and greenhouses."
         "Parcul Central Simion Bărnuțiu" -> "Old park with a charming lake, rowing boats, and bandstand."
         "Piața Unirii & Biserica Sf. Mihail" -> "The central square of Cluj-Napoca, dominated by the Cathedral."
@@ -286,6 +359,17 @@ fun TouristSpot.translate(isEnglish: Boolean): TouristSpot {
         "Cartierul Istoric Șchei" -> "Historic quiet narrow streets with traditional mountain cottage vibes."
         "Grădina Zoologică Brașov (Noua)" -> "Modern zoo setup inside Noua forest."
         "Lacul Noua & Parc Agrement" -> "Recreational park with boats, sporting zones and pine forests."
+        // Campina descriptions
+        "Un castel încărcat de mister, construit de savantul Bogdan Petriceicu Hasdeu în memoria fiicei sale geniale, Iulia." -> "A mysterious castle built by B.P. Hasdeu in memory of his genius daughter, Iulia."
+        "Casa memorială unde marele pictor Nicolae Grigorescu a trăit și creat în ultimii săi ani de viață." -> "The memorial house where the great painter Nicolae Grigorescu lived and created in his twilight years."
+        "Centrul cultural principal al orașului, gazdă a numeroase spectacole, expoziții și evenimente locale." -> "The city's main cultural center, hosting numerous performances, exhibitions, and local events."
+        "Clădirea administrativă centrală din Câmpina, situată pe pitorescul Bulevard al Culturii." -> "The central administrative building of Campina, located on the scenic Culture Boulevard."
+        "O pitorească biserică istorică de lemn datând de la 1714, formată dintr-un singur trunchi de stejar." -> "A picturesque historic wooden church dating to 1714, carved out of a single massive oak trunk."
+        "O capelă gotică misterioasă, monument de arhitectură, ridicată în memoria pionierului petrolului, Dumitru Hernea." -> "A mysterious Gothic chapel built in memory of petroleum pioneer Dumitru Hernea."
+        "Zonă de promenadă superbă și relaxantă mărginită de platani uriași, considerat unul dintre cele mai ozonate locuri." -> "A gorgeous promenade flanked by towering sycamores, considered one of the highest ozone spots in Europe."
+        "Cel mai înalt punct de belvedere din zonă, oferind panorame uluitoare spre valea Doftanei și dealurile prahovene." -> "Highest local scenic outlook, offering stunning panoramas of Doftana Valley and the Prahova hills."
+        "Un lac natural liniștit ideal pentru plimbări relaxante pe mal, pescuit și evadare în mijlocul naturii locale." -> "A serene natural lake perfect for calm boardwalk strolls, recreation and local nature getaways."
+        "Punctul de pornire al călătoriei." -> "The starting point of the journey."
         else -> description
     }
     return this.copy(name = engName, description = engDesc)

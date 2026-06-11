@@ -13,7 +13,8 @@ import kotlin.random.Random
 enum class TransportOperator(val shortName: String, val fullName: String, val website: String) {
     STB("STB", "Societatea de Transport București S.A.", "https://www.stb.ro"),
     CTP("CTP", "Compania de Transport Public Cluj-Napoca S.A.", "https://ctpcj.ro"),
-    RATBV("RATBV", "RATBV S.A. Brașov", "https://www.ratbv.ro")
+    RATBV("RATBV", "RATBV S.A. Brașov", "https://www.ratbv.ro"),
+    ELIADO("Eliado", "Eliado Trans Câmpina S.R.L.", "https://www.eliado.ro")
 }
 
 data class LiveTransitVehicle(
@@ -50,6 +51,7 @@ object TransportApiEngine {
         return when (city) {
             "București" -> TransportOperator.STB
             "Brașov" -> TransportOperator.RATBV
+            "Câmpina" -> TransportOperator.ELIADO
             else -> TransportOperator.CTP
         }
     }
@@ -67,6 +69,12 @@ object TransportApiEngine {
                 number = "7472",
                 messageBody = "A",
                 costExplanation = "4.00 Lei pentru o călătorie valabilă 60 min în rețeaua RATBV urbană.",
+                validityMinutes = 60
+            )
+            "Câmpina" -> SmsTicketConfig(
+                number = "7458",
+                messageBody = "CMP",
+                costExplanation = "3.00 Lei pentru o călătorie urbană Eliado Câmpina.",
                 validityMinutes = 60
             )
             else -> SmsTicketConfig( // Cluj-Napoca
@@ -128,6 +136,14 @@ object TransportApiEngine {
                     "ratbv_1", op,
                     "Suplimentare Linie 20 Poiana",
                     "A fost suplimentar numărul de autobuze de pe linia 20 Livada Poștei - Poiana Brașov datorită afluxului masiv de turiști sosiți în weekend.",
+                    isCritical = false
+                )
+            )
+            TransportOperator.ELIADO -> listOf(
+                TransitAlert(
+                    "eliado_1", op,
+                    "Ghidaj Traseu Câmpina",
+                    "Autobuzul L1 circulă regulat pe traseul Gara Câmpina - Centru - Castelul Hasdeu, făcând legătura între atracțiile turistice majore.",
                     isCritical = false
                 )
             )
@@ -232,6 +248,19 @@ object TransportApiEngine {
                     speedKmh = rand.nextInt(15, 35),
                     vehicleModel = "Karsan Jest Electric",
                     occupancyPercentage = rand.nextInt(45, 80)
+                )
+            )
+            TransportOperator.ELIADO -> listOf(
+                LiveTransitVehicle(
+                    id = "ELI-L1-4040",
+                    lineName = "Autobuz L1",
+                    direction = "Casa de Cultură",
+                    latitude = 45.1265 + (rand.nextDouble() - 0.5) * 0.006,
+                    longitude = 25.7345 + (rand.nextDouble() - 0.5) * 0.006,
+                    delayMinutes = rand.nextInt(0, 2),
+                    speedKmh = rand.nextInt(25, 45),
+                    vehicleModel = "Isuzu Citiport",
+                    occupancyPercentage = rand.nextInt(15, 60)
                 )
             )
         }

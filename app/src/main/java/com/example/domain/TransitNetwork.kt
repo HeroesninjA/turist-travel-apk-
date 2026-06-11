@@ -13,13 +13,14 @@ data class BusStation(
 data class BusLine(
     val name: String, // e.g. "L104", "L335", "L783"
     val colorHex: String, // e.g. "#10B981" for emerald
-    val stations: List<BusStation>
+    val stations: List<BusStation>,
+    val type: LegType = LegType.BUS
 )
 
 data class RouteLeg(
     val fromPlaceName: String,
     val toPlaceName: String,
-    val type: LegType, // WALK or BUS
+    val type: LegType, // WALK, BUS, METRO, TROLLEY, TRAIN, TAXI
     val busLineName: String? = null,
     val busColorHex: String? = null,
     val boardingStation: String? = null,
@@ -30,7 +31,7 @@ data class RouteLeg(
 )
 
 enum class LegType {
-    WALK, BUS
+    WALK, BUS, METRO, TROLLEY, TRAIN, TAXI
 }
 
 data class OptimizedJourney(
@@ -38,6 +39,7 @@ data class OptimizedJourney(
     val legs: List<RouteLeg>,
     val totalDurationMinutes: Int,
     val totalBusFareLei: Int,
+    val totalTaxiCostLei: Int = 0,
     val departureTime: String = "09:00"
 )
 
@@ -104,9 +106,9 @@ object TransitNetwork {
 
     // Preset Tourist spots for Bucharest
     val BUCURESTI_PRESETS = listOf(
-        TouristSpot(1001, "Palatul Parlamentului", "București", 44.4275, 26.0872, 90, "Una dintre cele mai mari clădiri administrative din lume.", false, false),
-        TouristSpot(1002, "Centrul Vechi", "București", 44.4320, 26.1015, 120, "Inima istorică a Bucureștiului, plină de viață și clădiri de epocă.", false, false),
-        TouristSpot(1003, "Ateneul Român", "București", 44.4411, 26.0973, 60, "O bijuterie arhitecturală de importanță istorică națională.", false, false),
+        TouristSpot(1001, "Palatul Parlamentului", "București", 44.4275, 26.0872, 90, "Una dintre cele mai mari clădiri administrative din lume.", true, false),
+        TouristSpot(1002, "Centrul Vechi", "București", 44.4320, 26.1015, 120, "Inima istorică a Bucureștiului, plină de viață și clădiri de epocă.", true, false),
+        TouristSpot(1003, "Ateneul Român", "București", 44.4411, 26.0973, 60, "O bijuterie arhitecturală de importanță istorică națională.", true, false),
         TouristSpot(1004, "Parcul Herăstrău (Mihai I)", "București", 44.4715, 26.0815, 90, "Un parc uriaș, liniștit, situat în jurul unui lac superb.", false, false),
         TouristSpot(1005, "Arcul de Triumf", "București", 44.4671, 26.0782, 30, "Monumentul care celebrează victoria României în Primul Război Mondial.", false, false),
         TouristSpot(1006, "Muzeul Național al Satului", "București", 44.4720, 26.0763, 100, "O incursiune în viața rurală tradițională românească în aer liber.", false, false),
@@ -128,7 +130,32 @@ object TransitNetwork {
         TouristSpot(1022, "Palatul Mogoșoaia", "București", 44.5275, 25.9930, 100, "O clădire istorică în stil brâncovenesc deosebit, situată în exteriorul orașului.", false, false),
         TouristSpot(1023, "Muzeul de Artă Contemporană (MNAC)", "București", 44.4270, 26.0845, 75, "Situat în aripa din spate a Palatului Parlamentului, cu expoziții avangardiste.", false, false),
         TouristSpot(1024, "Piața Universității", "București", 44.4355, 26.1025, 30, "Kilometrul zero al democrației bucureștene, încadrat de clădiri universitare emblematice.", false, false),
-        TouristSpot(1025, "Opera Națională București", "București", 44.4345, 26.0790, 90, "Clădire istorică neoclasică, faimos centru de cultură pentru spectacole lirice și balet.", false, false)
+        TouristSpot(1025, "Opera Națională București", "București", 44.4345, 26.0790, 90, "Clădire istorică neoclasică, faimos centru de cultură pentru spectacole lirice și balet.", false, false),
+        TouristSpot(1026, "Parcul Alexandru Ioan Cuza (IOR)", "București", 44.4230, 26.1550, 90, "Unul dintre cele mai îngrijite și frumoase parcuri ale capitalei, axat în jurul lacului Titan.", false, false),
+        TouristSpot(1027, "Therme București", "București", 44.6050, 26.0790, 180, "Cel mai mare centru de wellness, relaxare și divertisment cu ape termale din Europa, situat în nord.", false, false),
+        TouristSpot(1028, "Palatul Șuțu (Muzeul Bucureștiului)", "București", 44.4348, 26.1030, 60, "O superbă clădire neogotică sclipitoare care găzduiește istoria capitalei chiar în Piața Universității.", false, false),
+        TouristSpot(1029, "Teatrul Național I.L. Caragiale", "București", 44.4363, 26.1035, 75, "Epicentrul artelor spectacolului din România, o capodoperă arhitecturală cu acoperiș emblematic roșu.", false, false),
+        TouristSpot(1030, "Observatorul Astronomic Vasile Urseanu", "București", 44.4475, 26.0965, 45, "O vilă istorică superbă dotată cu o cupolă de observații unde puteți admira stelele și planetele.", false, false),
+        TouristSpot(1031, "Parcul Kiseleff", "București", 44.4590, 26.0820, 50, "Oază istorică romantică pe marginea Bulevardului Kiseleff, plină de statui inedite și arbori bătrâni.", false, false),
+        TouristSpot(1032, "Palatul Cantacuzino", "București", 44.4485, 26.0885, 50, "Bijuterie impresionantă în stil art nouveau francez cu forme eclectice, celebrând memoria lui George Enescu.", false, false),
+        TouristSpot(1033, "Pasajul Macca-Vilacrosse", "București", 44.4332, 26.0988, 30, "Un încântător pasaj acoperit cu geamuri galbene ce oferă o atmosferă orientală boemă plină de narghilele și puburi.", false, false),
+        TouristSpot(1034, "Palatul CEC", "București", 44.4315, 26.0965, 40, "Un superb monument de arhitectură eclectică franceză de secol XIX cu impunătoarea sa cupolă din sticlă și oțel.", false, false),
+        TouristSpot(1035, "Muzeul Colecțiilor de Artă", "București", 44.4442, 26.0898, 90, "Fostul Palat Romanit de pe Calea Victoriei, expunând colecții de pictură românească, europeană și orientală.", false, false),
+        TouristSpot(1036, "Palatul Justiției", "București", 44.4302, 26.0985, 45, "Monunent masiv pe cheiul Dâmboviței, proiectat în stilul Renașterii Franceze, sediu istoric de judecată.", false, false),
+        TouristSpot(1037, "Palatul Patriarhiei", "București", 44.4239, 26.0975, 60, "Centrul spiritual ortodox construit pe Dealul Mitropoliei, o clădire monumentală restaurată minuțios.", false, false),
+        TouristSpot(1038, "Muzeul Militar Național", "București", 44.4422, 26.0772, 90, "Moștenire istorică militară rară cuprinzând uniforme de epocă, armament de colecție și piese de aviație.", false, false),
+        TouristSpot(1039, "Arena Națională", "București", 44.4372, 26.1525, 45, "Cel mai mare stadion din România, o bijuterie sportivă modernă cu acoperiș retractabil panoramic.", false, false),
+        TouristSpot(1040, "Muzeul Național al Literaturii Române", "București", 44.4479, 26.0928, 60, "Spațiu cultural avangardist dedicat manuscriselor, cărților vechi și scriitorilor naționali remarcabili.", false, false),
+        TouristSpot(1041, "Palatul Kretzulescu", "București", 44.4422, 26.0898, 50, "O elegantă clădire eclectică rafinată proiectată de Petre Antonescu, situată lângă minunatul Parc Cișmigiu.", false, false),
+        TouristSpot(1042, "Biserica Kretzulescu", "București", 44.4382, 26.0960, 30, "Biserică istorică din cărămidă roșie lîngă Piața Revoluției, stil brâncovenesc autentic impunător.", false, false),
+        TouristSpot(1043, "Muzeul Tehnic Dimitrie Leonida", "București", 44.4162, 26.0945, 60, "Remarcabil muzeu de inovații tehnologice, vehicule retro și motoare cu abur din Parcul Carol.", false, false),
+        TouristSpot(1044, "Palatul Primăriei Capitalei", "București", 44.4350, 26.0925, 45, "Sediul central administrativ ridicat de Petre Antonescu în superb stil neoromânesc monumental vizavi de Cișmigiu.", false, false),
+        TouristSpot(1045, "Turnul de Artă (Pantelimon)", "București", 44.4402, 26.1672, 50, "Fost turn de apă de 37 de metri reamenajat cu trepte metalice spirale într-un vibrant hub cultural urban.", false, false),
+        TouristSpot(1046, "Muzeul Național al Hărților și Cărții Vechi", "București", 44.4608, 26.0893, 60, "O inedită vilă elegantă din nord ce găzduiește colecții fascinante de hărți de epocă ale lumii.", false, false),
+        TouristSpot(1047, "Parcul Plumbuita", "București", 44.4715, 26.1365, 45, "Bătrân parc de promenadă în jurul mănăstirii fortificate ridicate de domnitorul Mihnea Turcitul.", false, false),
+        TouristSpot(1048, "Parcul Circului de Stat", "București", 44.4565, 26.1090, 50, "Gaston deosebit renumit pentru lotușii roz rari, aleile cochete din jur și Circul de Stat.", false, false),
+        TouristSpot(1049, "Palatul Ghica Tei", "București", 44.4632, 26.1265, 60, "Fostă reședință de vară somptuoasă de secol XIX a domnitorului Grigore Dimitrie Ghica pe malul lacului.", false, false),
+        TouristSpot(1050, "Cimitirul Bellu", "București", 44.4022, 26.0998, 70, "Un adevărat muzeu de sculptură în aer liber, panteonul celor mai luminate minți ale spiritului românesc.", false, false)
     )
 
     // Bus Stations for Cluj-Napoca
@@ -176,9 +203,9 @@ object TransitNetwork {
 
     // Preset Tourist spots for Cluj-Napoca
     val CLUJ_PRESETS = listOf(
-        TouristSpot(2001, "Grădina Botanică Alexandru Borza", "Cluj-Napoca", 46.7592, 23.5867, 90, "Oază magnifică de verdeață ce adăpostește plante rare și o grădină japoneză.", false, false),
-        TouristSpot(2002, "Parcul Central Simion Bărnuțiu", "Cluj-Napoca", 46.7691, 23.5786, 60, "Parcul istoric central cu un lac superb de plimbări cu barca și Casino.", false, false),
-        TouristSpot(2003, "Piața Unirii & Biserica Sf. Mihail", "Cluj-Napoca", 46.7689, 23.5898, 65, "Piața istorică principală delimitată de monumentala catedrală gotică.", false, false),
+        TouristSpot(2001, "Grădina Botanică Alexandru Borza", "Cluj-Napoca", 46.7592, 23.5867, 90, "Oază magnifică de verdeață ce adăpostește plante rare și o grădină japoneză.", true, false),
+        TouristSpot(2002, "Parcul Central Simion Bărnuțiu", "Cluj-Napoca", 46.7691, 23.5786, 60, "Parcul istoric central cu un lac superb de plimbări cu barca și Casino.", true, false),
+        TouristSpot(2003, "Piața Unirii & Biserica Sf. Mihail", "Cluj-Napoca", 46.7689, 23.5898, 65, "Piața istorică principală delimitată de monumentala catedrală gotică.", true, false),
         TouristSpot(2004, "Catedrala Mitropolitană & Piața Avram Iancu", "Cluj-Napoca", 46.7702, 23.5964, 45, "Catedrală ortodoxă impunătoare și piațetă cu fântâni arteziene animate.", false, false),
         TouristSpot(2005, "Dealul Cetățuia", "Cluj-Napoca", 46.7772, 23.5841, 75, "O panoramă spectaculoasă a întregului oraș, ideală la apus de soare.", false, false),
         TouristSpot(2006, "Muzeul de Artă & Palatul Bánffy", "Cluj-Napoca", 46.7701, 23.5910, 50, "Palat baroc splendid ce găzduiește colecții naționale valoroase de artă.", false, false),
@@ -238,9 +265,9 @@ object TransitNetwork {
 
     // Preset Tourist spots for Brașov
     val BRASOV_PRESETS = listOf(
-        TouristSpot(3001, "Biserica Neagră", "Brașov", 45.6418, 25.5878, 45, "Cea mai mare biserică gotică din sud-estul Europei.", false, false),
-        TouristSpot(3002, "Piața Sfatului", "Brașov", 45.6425, 25.5890, 60, "Piața istorică principală din Brașov, plină de farmec și cafenele.", false, false),
-        TouristSpot(3003, "Telecabina Tâmpa", "Brașov", 45.6390, 25.5940, 90, "Telecabina spre muntele Tâmpa cu panoramă excelentă a orașului.", false, false),
+        TouristSpot(3001, "Biserica Neagră", "Brașov", 45.6418, 25.5878, 45, "Cea mai mare biserică gotică din sud-estul Europei.", true, false),
+        TouristSpot(3002, "Piața Sfatului", "Brașov", 45.6425, 25.5890, 60, "Piața istorică principală din Brașov, plină de farmec și cafenele.", true, false),
+        TouristSpot(3003, "Telecabina Tâmpa", "Brașov", 45.6390, 25.5940, 90, "Telecabina spre muntele Tâmpa cu panoramă excelentă a orașului.", true, false),
         TouristSpot(3004, "Turnul Alb", "Brașov", 45.6448, 25.5862, 35, "Turn istoric de apărare oferind o vedere spectaculoasă la înălțime.", false, false),
         TouristSpot(3005, "Poarta Șchei", "Brașov", 45.6394, 25.5858, 20, "Poartă barocă superbă ce duce spre vechiul cartier românesc.", false, false),
         TouristSpot(3006, "Turnul Negru", "Brașov", 45.6436, 25.5862, 30, "Turn de strajă din secolul al XV-lea cu vedere panoramică spre Biserica Neagră.", false, false),
@@ -265,46 +292,238 @@ object TransitNetwork {
         TouristSpot(3025, "Lacul Noua & Parc Agrement", "Brașov", 45.6190, 25.6410, 80, "Zonă superbă de relaxare cu bărci, pontoane, terenuri de sport și un aer minunat de munte.", false, false)
     )
 
+    // Bus Stations for Câmpina
+    val CAMPINA_STATIONS = listOf(
+        BusStation("CMP_GARA", "Gara Câmpina", 45.1189, 25.7078),
+        BusStation("CMP_AUTOGARA", "Stația Autogară Câmpina", 45.1245, 25.7185),
+        BusStation("CMP_CASTEL", "Stația Castelul Hasdeu", 45.1325, 25.7200),
+        BusStation("CMP_GRIGORESCU", "Stația Muzeul Grigorescu", 45.1293, 25.7300),
+        BusStation("CMP_CENTRAL", "Stația Casa de Cultură", 45.1265, 25.7345)
+    )
+
+    // Bus Lines for Câmpina
+    val CAMPINA_LINES = listOf(
+        BusLine(
+            "Autobuz L1", 
+            "#3B82F6", // Blue
+            listOf(
+                CAMPINA_STATIONS[0], // Gara Câmpina
+                CAMPINA_STATIONS[1], // Autogară
+                CAMPINA_STATIONS[2], // Castelul Hasdeu
+                CAMPINA_STATIONS[3], // Muzeul Grigorescu
+                CAMPINA_STATIONS[4]  // Casa de Cultură
+            )
+        )
+    )
+
+    // Preset Tourist spots for Câmpina
+    val CAMPINA_PRESETS = listOf(
+        TouristSpot(4001, "Castelul \"Iulia Hasdeu\"", "Câmpina", 45.1328, 25.7196, 90, "Un castel încărcat de mister, construit de savantul Bogdan Petriceicu Hasdeu în memoria fiicei sale geniale, Iulia.", true, false),
+        TouristSpot(4002, "Muzeul Memorial \"Nicolae Grigorescu\"", "Câmpina", 45.1293, 25.7300, 60, "Casa memorială unde marele pictor Nicolae Grigorescu a trăit și creat în ultimii săi ani de viață.", true, false),
+        TouristSpot(4003, "Casa de Cultură Câmpina", "Câmpina", 45.1266, 25.7346, 45, "Centrul cultural principal al orașului, gazdă a numeroase spectacole, expoziții și evenimente locale.", true, false),
+        TouristSpot(4004, "Primăria Câmpina", "Câmpina", 45.1252, 25.7381, 30, "Clădirea administrativă centrală din Câmpina, situată pe pitorescul Bulevard al Culturii.", true, false),
+        TouristSpot(4005, "Biserica de Lemn \"Adormirea Maicii Domnului\"", "Câmpina", 45.1215, 25.7320, 30, "O pitorească biserică istorică de lemn datând de la 1714, formată dintr-un singur trunchi de stejar.", false, false),
+        TouristSpot(4006, "Capela în stil Gotic \"Hernea\"", "Câmpina", 45.1365, 25.7285, 40, "O capelă gotică misterioasă, monument de arhitectură, ridicată în memoria pionierului petrolului, Dumitru Hernea.", false, false),
+        TouristSpot(4007, "Bulevardul Culturii (Aleea cu Platani)", "Câmpina", 45.1278, 25.7410, 50, "Zonă de promenadă superbă și relaxantă mărginită de platani uriași, considerat unul dintre cele mai ozonate locuri.", false, false),
+        TouristSpot(4008, "Fântâna cu Cireși & Dealul Muscel", "Câmpina", 45.1310, 25.7485, 60, "Cel mai înalt punct de belvedere din zonă, oferind panorame uluitoare spre valea Doftanei și dealurile prahovene.", false, false),
+        TouristSpot(4009, "Lacul Câmpina (Lacul Peștelui)", "Câmpina", 45.1165, 25.7225, 45, "Un lac natural liniștit ideal pentru plimbări relaxante pe mal, pescuit și evadare în mijlocul naturii locale.", false, false)
+    )
+
+    // --- NEW MULTI-MODAL Transit Network Definitions ---
+
+    // Bucharest Extra Modes (Metro, Trolley, Train)
+    val BUH_METRO_STATIONS = listOf(
+        BusStation("MET_VICTORIEI", "Metrou Piața Victoriei", 44.4526, 26.0861),
+        BusStation("MET_ROMANA", "Metrou Piața Romană", 44.4446, 26.0976),
+        BusStation("MET_UNIRII", "Metrou Piața Unirii", 44.4266, 26.1026),
+        BusStation("MET_TINERETULUI", "Metrou Tineretului", 44.4082, 26.1042),
+        BusStation("MET_PARLAMENT", "Metrou Izvor/Palat", 44.4313, 26.0901)
+    )
+
+    val BUH_TROLLEY_STATIONS = listOf(
+        BusStation("TRO_GARA", "Troleibuz Gara de Nord", 44.4469, 26.0726),
+        BusStation("TRO_ROMANA", "Troleibuz Piața Romană", 44.4444, 26.0974),
+        BusStation("TRO_ARENA", "Troleibuz Arena Națională", 44.4373, 26.1526)
+    )
+
+    val BUH_TRAIN_STATIONS = listOf(
+        BusStation("TRN_GARA", "Tren Gara de Nord", 44.4467, 26.0724),
+        BusStation("TRN_HERASTRAU", "Tren Halta Herăstrău", 44.4716, 26.0816),
+        BusStation("TRN_THERME", "Tren Halta Balotești (Therme)", 44.6051, 26.0791)
+    )
+
+    val BUH_NEW_LINES = listOf(
+        BusLine("Metrou M2", "#3B82F6", BUH_METRO_STATIONS, LegType.METRO),
+        BusLine("Troleibuz 86", "#14B8A6", BUH_TROLLEY_STATIONS, LegType.TROLLEY),
+        BusLine("Tren Regional T1", "#8B5CF6", BUH_TRAIN_STATIONS, LegType.TRAIN)
+    )
+
+    // Cluj Extra Modes (Metro Cluj, Trolley, Train)
+    val CLJ_METRO_STATIONS = listOf(
+        BusStation("MET_CLJ_FLORESTI", "Metrou Florești", 46.7321, 23.4911),
+        BusStation("MET_CLJ_MANASTUR", "Metrou Mănăștur (Calvaria)", 46.7589, 23.5571),
+        BusStation("MET_CLJ_CENTRAL", "Metrou Piața Unirii", 46.7690, 23.5899),
+        BusStation("MET_CLJ_M_VITEAZUL", "Metrou Piața Mihai Viteazul", 46.7746, 23.5893),
+        BusStation("MET_CLJ_IULIUS", "Metrou Iulius Park", 46.7726, 23.6236)
+    )
+
+    val CLJ_TROLLEY_STATIONS = listOf(
+        BusStation("TRO_CLJ_BUCIUM", "Troleibuz Bucium", 46.7562, 23.5590),
+        BusStation("TRO_CLJ_MEMO", "Troleibuz Memorandului", 46.7685, 23.5863),
+        BusStation("TRO_CLJ_OPERA", "Troleibuz Piața Avram Iancu", 46.7699, 23.5956)
+    )
+
+    val CLJ_TRAIN_STATIONS = listOf(
+        BusStation("TRN_CLJ_GARA", "Tren Gara Cluj", 46.7866, 23.5876),
+        BusStation("TRN_CLJ_EAST", "Tren Cluj Est (Someșeni)", 46.7767, 23.6067)
+    )
+
+    val CLJ_NEW_LINES = listOf(
+        BusLine("Metrou Cluj M1 (Simulat)", "#EF4444", CLJ_METRO_STATIONS, LegType.METRO),
+        BusLine("Troleibuz 6", "#10B981", CLJ_TROLLEY_STATIONS, LegType.TROLLEY),
+        BusLine("Tren Regional Tetarom", "#EC4899", CLJ_TRAIN_STATIONS, LegType.TRAIN)
+    )
+
+    // Brașov Extra Modes (Trolley, Train)
+    val SBV_TROLLEY_STATIONS = listOf(
+        BusStation("TRO_SBV_GARA", "Troleibuz Gara Brașov", 45.6612, 25.6112),
+        BusStation("TRO_SBV_LIVADA", "Troleibuz Livada Poștei", 45.6436, 25.5926)
+    )
+
+    val SBV_TRAIN_STATIONS = listOf(
+        BusStation("TRN_SBV_GARA", "Tren Gara Centrală", 45.6610, 25.6110),
+        BusStation("TRN_SBV_BARTOLOMEU", "Tren Halta Bartolomeu", 45.6620, 25.5680)
+    )
+
+    val SBV_NEW_LINES = listOf(
+        BusLine("Troleibuz 2", "#14B8A6", SBV_TROLLEY_STATIONS, LegType.TROLLEY),
+        BusLine("Tren Regio T3", "#8B5CF6", SBV_TRAIN_STATIONS, LegType.TRAIN)
+    )
+
+    // Câmpina Extra Modes (Trolley, Train)
+    val CMP_TROLLEY_STATIONS = listOf(
+        BusStation("TRO_CMP_AUTOGARA", "Electric Bus Autogară", 45.1246, 25.7186),
+        BusStation("TRO_CMP_CENTRAL", "Electric Bus Casa de Cultură", 45.1266, 25.7346)
+    )
+
+    val CMP_TRAIN_STATIONS = listOf(
+        BusStation("TRN_CMP_GARA", "Tren Gara Câmpina", 45.1190, 25.7079),
+        BusStation("TRN_CMP_POIANA", "Tren Halta Poiana Câmpina", 45.1230, 25.6980)
+    )
+
+    val CMP_NEW_LINES = listOf(
+        BusLine("Troleibuz Ecologic E1", "#F59E0B", CMP_TROLLEY_STATIONS, LegType.TROLLEY),
+        BusLine("Tren Regional Poiana", "#8B5CF6", CMP_TRAIN_STATIONS, LegType.TRAIN)
+    )
+
     // Default Starting places based on city
     fun getStartSpot(city: String): TouristSpot {
         return when (city) {
             "București" -> TouristSpot(-1, "Gara de Nord (Hotel/Start)", "București", 44.4468, 26.0725, 0, "Punctul de pornire al călătoriei.", false, false)
             "Brașov" -> TouristSpot(-1, "Gara Brașov (Hotel/Start)", "Brașov", 45.6611, 25.6111, 0, "Punctul de pornire al călătoriei.", false, false)
+            "Câmpina" -> TouristSpot(-1, "Gara Câmpina (Hotel/Start)", "Câmpina", 45.1189, 25.7078, 0, "Punctul de pornire al călătoriei.", false, false)
             else -> TouristSpot(-1, "Gara Cluj-Napoca (Hotel/Start)", "Cluj-Napoca", 46.7865, 23.5875, 0, "Punctul de pornire al călătoriei.", false, false)
         }
     }
 
     fun getStationsForCity(city: String): List<BusStation> {
         return when (city) {
-            "București" -> BUCURESTI_STATIONS
-            "Brașov" -> BRASOV_STATIONS
-            else -> CLUJ_STATIONS
+            "București" -> BUCURESTI_STATIONS + BUH_METRO_STATIONS + BUH_TROLLEY_STATIONS + BUH_TRAIN_STATIONS
+            "Brașov" -> BRASOV_STATIONS + SBV_TROLLEY_STATIONS + SBV_TRAIN_STATIONS
+            "Câmpina" -> CAMPINA_STATIONS + CMP_TROLLEY_STATIONS + CMP_TRAIN_STATIONS
+            else -> CLUJ_STATIONS + CLJ_METRO_STATIONS + CLJ_TROLLEY_STATIONS + CLJ_TRAIN_STATIONS
         }
     }
 
     fun getLinesForCity(city: String): List<BusLine> {
         return when (city) {
-            "București" -> BUCURESTI_LINES
-            "Brașov" -> BRASOV_LINES
-            else -> CLUJ_LINES
+            "București" -> BUCURESTI_LINES + BUH_NEW_LINES
+            "Brașov" -> BRASOV_LINES + SBV_NEW_LINES
+            "Câmpina" -> CAMPINA_LINES + CMP_NEW_LINES
+            else -> CLUJ_LINES + CLJ_NEW_LINES
         }
     }
 
+    // Transfer/Multi-hop Connection Struct and Routing Engine
+    data class Connection(
+        val line1: BusLine,
+        val line2: BusLine? = null,
+        val transferStation: BusStation? = null,
+        val idxFrom1: Int,
+        val idxTo1: Int,
+        val idxFrom2: Int = -1,
+        val idxTo2: Int = -1
+    )
+
+    fun findConnection(
+        fromStation: BusStation,
+        toStation: BusStation,
+        lines: List<BusLine>,
+        allowTransfer: Boolean
+    ): Connection? {
+        // 1. Direct Search
+        for (line in lines) {
+            val idxF = line.stations.indexOfFirst { it.id == fromStation.id }
+            val idxT = line.stations.indexOfFirst { it.id == toStation.id }
+            if (idxF != -1 && idxT != -1 && idxF != idxT) {
+                return Connection(line1 = line, idxFrom1 = idxF, idxTo1 = idxT)
+            }
+        }
+        
+        // 2. Transfer Search
+        if (allowTransfer) {
+            for (line1 in lines) {
+                val idxF1 = line1.stations.indexOfFirst { it.id == fromStation.id }
+                if (idxF1 == -1) continue
+                
+                for (line2 in lines) {
+                    if (line1.name == line2.name) continue
+                    val idxT2 = line2.stations.indexOfFirst { it.id == toStation.id }
+                    if (idxT2 == -1) continue
+                    
+                    // Look for common intersection station
+                    val line2Ids = line2.stations.map { it.id }.toSet()
+                    val common = line1.stations.firstOrNull { s1 ->
+                        s1.id != fromStation.id && s1.id != toStation.id && line2Ids.contains(s1.id)
+                    }
+                    if (common != null) {
+                        val idxTo1 = line1.stations.indexOfFirst { it.id == common.id }
+                        val idxFrom2 = line2.stations.indexOfFirst { it.id == common.id }
+                        if (idxTo1 != -1 && idxFrom2 != -1) {
+                            return Connection(
+                                line1 = line1,
+                                line2 = line2,
+                                transferStation = common,
+                                idxFrom1 = idxF1,
+                                idxTo1 = idxTo1,
+                                idxFrom2 = idxFrom2,
+                                idxTo2 = idxT2
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        return null
+    }
+
     /**
-     * Compute the optimized path (Traveling Salesperson) using a Greedy (nearest-neighbor) heuristic.
-     * Orders the spots starting from the designated start point.
+     * Compute optimized Traveling Salesperson journey, respecting multi-hop preferences,
+     * transport category toggles (allowing removal of methods), taxi pricing, and route strategy parameters.
      */
     fun optimizePath(
         startSpot: TouristSpot,
         spotsToVisit: List<TouristSpot>,
-        city: String
+        city: String,
+        preference: String = "DEFAULT",
+        enabledModes: Set<LegType> = setOf(LegType.WALK, LegType.BUS, LegType.METRO, LegType.TROLLEY, LegType.TRAIN, LegType.TAXI)
     ): OptimizedJourney {
         val activeSpots = spotsToVisit.filter { it.isSelected && it.id != startSpot.id }.toMutableList()
         val ordered = mutableListOf<TouristSpot>()
         
         var current = startSpot
         
-        // Loop and grab nearest spot based on distance
+        // Greedy Traveling Salesperson Order
         while (activeSpots.isNotEmpty()) {
             val nearest = activeSpots.minByOrNull { spot ->
                 calculateDistance(current.latitude, current.longitude, spot.latitude, spot.longitude)
@@ -318,35 +537,72 @@ object TransitNetwork {
             }
         }
 
-        // Now calculate journey route details step-by-step
         val legs = mutableListOf<RouteLeg>()
         var totalMinutes = 0
         var totalFare = 0
+        var totalTaxiCost = 0
         
         val fullRouteWithStart = listOf(startSpot) + ordered
-        val busLines = getLinesForCity(city)
-        val busStations = getStationsForCity(city)
+        val allLines = getLinesForCity(city)
         
+        // Eliminare metode: filter lines to only those actively selected by user
+        val allowedLines = allLines.filter { enabledModes.contains(it.type) }
+        val allowedStations = allowedLines.flatMap { it.stations }.distinctBy { it.id }
+
+        // Walk thresholds based on strategy preference
+        val walkDirectThreshold = when (preference) {
+            "LESS_WALKING" -> 200.0 // Avoid walks bigger than 200m if possible
+            "CHEAPER" -> 1500.0     // Walk more to save money
+            "FASTER" -> 400.0       // Ride faster modes if possible
+            else -> 700.0
+        }
+
+        val allowTransfers = (preference == "MORE_TRANSFERS" || preference == "LESS_WALKING" || preference == "DEFAULT")
+
         for (i in 0 until fullRouteWithStart.size - 1) {
             val from = fullRouteWithStart[i]
             val to = fullRouteWithStart[i + 1]
             
-            // Try to find if we should take a bus or walk.
-            // Rule:
-            // 1. Find closet bus station to 'from' and 'to'
-            val nearestStationToFrom = busStations.minByOrNull { calculateDistance(from.latitude, from.longitude, it.latitude, it.longitude) }
-            val nearestStationToTo = busStations.minByOrNull { calculateDistance(to.latitude, to.longitude, it.latitude, it.longitude) }
-            
             val distDirect = calculateDistance(from.latitude, from.longitude, to.latitude, to.longitude)
+            
+            val topFromStations = allowedStations.sortedBy { calculateDistance(from.latitude, from.longitude, it.latitude, it.longitude) }
+            val topToStations = allowedStations.sortedBy { calculateDistance(to.latitude, to.longitude, it.latitude, it.longitude) }
+            
+            val nearestStationToFrom = topFromStations.firstOrNull()
+            val nearestStationToTo = topToStations.firstOrNull()
+            
             val distToStationFrom = nearestStationToFrom?.let { calculateDistance(from.latitude, from.longitude, it.latitude, it.longitude) } ?: Double.MAX_VALUE
             val distToStationTo = nearestStationToTo?.let { calculateDistance(to.latitude, to.longitude, it.latitude, it.longitude) } ?: Double.MAX_VALUE
-            
-            // If the total walking to stations is bigger than direct walking distance, OR direct distance is short (< 800m), just walk!
-            val totalWalkDistanceToBus = distToStationFrom + distToStationTo
-            if (distDirect < 700.0 || totalWalkDistanceToBus > distDirect) {
-                // WALKING ROUTE
+            val totalWalkDistanceToTransit = distToStationFrom + distToStationTo
+
+            // Determine if direct taxi / Uber is selected
+            val runTaxiDirect = enabledModes.contains(LegType.TAXI) && 
+                (preference == "FASTER" || allowedLines.isEmpty() || (preference == "LESS_WALKING" && allowedLines.isEmpty()))
+
+            if (runTaxiDirect) {
+                // TAXX / UBER DIRECT ROUTE
                 val meters = distDirect.toInt()
-                val duration = max(2, (meters / 80).toInt()) // ~5km/h = 83m/min
+                val duration = max(2, (meters / 250).toInt()) // Fast: 15km/h city flow
+                val baseFee = 6.0
+                val costPerKm = 3.5
+                val taxiFare = (baseFee + (meters / 1000.0) * costPerKm).roundToInt().coerceAtLeast(10)
+                
+                legs.add(
+                    RouteLeg(
+                        fromPlaceName = from.name,
+                        toPlaceName = to.name,
+                        type = LegType.TAXI,
+                        distanceMeters = meters,
+                        durationMinutes = duration,
+                        directions = "Ia un Ridesharing / Taxi de la ${from.name} până la ${to.name} • Tarif estimat Uber/Taxi: $taxiFare Lei (Distanță: $meters m, ~$duration min)."
+                    )
+                )
+                totalMinutes += duration + to.visitDurationMinutes
+                totalTaxiCost += taxiFare
+            } else if (allowedStations.isEmpty() || (preference != "LESS_WALKING" && distDirect < walkDirectThreshold) || (preference != "LESS_WALKING" && totalWalkDistanceToTransit > distDirect)) {
+                // WALKING DIRECT
+                val meters = distDirect.toInt()
+                val duration = max(2, (meters / 80).toInt()) // ~5 km/h
                 legs.add(
                     RouteLeg(
                         fromPlaceName = from.name,
@@ -359,86 +615,186 @@ object TransitNetwork {
                 )
                 totalMinutes += duration + to.visitDurationMinutes
             } else {
-                // BUS OPTION POSSIBLE
-                // Check if any bus line connects nearestStationToFrom and nearestStationToTo
-                var matchingLine: BusLine? = null
-                var fromIndex = -1
-                var toIndex = -1
-                
-                if (nearestStationToFrom != null && nearestStationToTo != null && nearestStationToFrom.id != nearestStationToTo.id) {
-                    for (line in busLines) {
-                        val idxF = line.stations.indexOfFirst { it.id == nearestStationToFrom.id }
-                        val idxT = line.stations.indexOfFirst { it.id == nearestStationToTo.id }
-                        if (idxF != -1 && idxT != -1 && idxF != idxT) {
-                            matchingLine = line
-                            fromIndex = idxF
-                            toIndex = idxT
-                            break
+                // SEARCHING FOR PUBLIC TRANSIT CONNECTIONS
+                var bestConn: Connection? = null
+                var bestFrom: BusStation? = null
+                var bestTo: BusStation? = null
+
+                if (preference == "LESS_WALKING") {
+                    var minTotalWalk = Double.MAX_VALUE
+                    for (fSt in topFromStations.take(4)) {
+                        for (tSt in topToStations.take(4)) {
+                            if (fSt.id != tSt.id) {
+                                val c = findConnection(fSt, tSt, allowedLines, true)
+                                if (c != null) {
+                                    val wF = calculateDistance(from.latitude, from.longitude, fSt.latitude, fSt.longitude)
+                                    val wT = calculateDistance(to.latitude, to.longitude, tSt.latitude, tSt.longitude)
+                                    val currentWalk = wF + wT
+                                    // Make sure it doesn't walk more than just walking direct
+                                    if (currentWalk < minTotalWalk && currentWalk < distDirect) {
+                                        minTotalWalk = currentWalk
+                                        bestConn = c
+                                        bestFrom = fSt
+                                        bestTo = tSt
+                                    }
+                                }
+                            }
                         }
+                    }
+                } else {
+                    for (fSt in topFromStations.take(1)) {
+                        for (tSt in topToStations.take(1)) {
+                            if (fSt.id != tSt.id) {
+                                val c = findConnection(fSt, tSt, allowedLines, allowTransfers)
+                                if (c != null) {
+                                    bestConn = c
+                                    bestFrom = fSt
+                                    bestTo = tSt
+                                    break
+                                }
+                            }
+                        }
+                        if (bestConn != null) break
                     }
                 }
                 
-                if (matchingLine != null && nearestStationToFrom != null && nearestStationToTo != null) {
-                    // We found a direct bus line!
-                    // Let's create legs: Walk to station -> Bus ride -> Walk to Spot
-                    val walkMeters1 = distToStationFrom.toInt()
+                val conn = bestConn
+
+                if (conn != null && bestFrom != null && bestTo != null) {
+                    val finalDistToStationFrom = calculateDistance(from.latitude, from.longitude, bestFrom.latitude, bestFrom.longitude)
+                    val finalDistToStationTo = calculateDistance(to.latitude, to.longitude, bestTo.latitude, bestTo.longitude)
+
+                    // Walk to first station
+                    val walkMeters1 = finalDistToStationFrom.toInt()
                     val walkTime1 = max(1, (walkMeters1 / 80).toInt())
-                    if (walkMeters1 > 50) {
+                    if (walkMeters1 > 40) {
                         legs.add(
                             RouteLeg(
                                 fromPlaceName = from.name,
-                                toPlaceName = nearestStationToFrom.name,
+                                toPlaceName = bestFrom.name,
                                 type = LegType.WALK,
                                 distanceMeters = walkMeters1,
                                 durationMinutes = walkTime1,
-                                directions = "Mergi pe jos ${walkMeters1} m până la stația de autobuz: ${nearestStationToFrom.name}."
+                                directions = "Mergi pe jos ${walkMeters1} m până la stația: ${bestFrom.name}."
                             )
                         )
                         totalMinutes += walkTime1
                     }
-                    
-                    // Bus journey
-                    val stationsInBetween = abs(toIndex - fromIndex)
-                    val busRideDuration = stationsInBetween * 4 + 2 // 4 min per station average + buffer
-                    val busMeters = (calculateDistance(nearestStationToFrom.latitude, nearestStationToFrom.longitude, nearestStationToTo.latitude, nearestStationToTo.longitude)).toInt()
-                    legs.add(
-                        RouteLeg(
-                            fromPlaceName = nearestStationToFrom.name,
-                            toPlaceName = nearestStationToTo.name,
-                            type = LegType.BUS,
-                            busLineName = matchingLine.name,
-                            busColorHex = matchingLine.colorHex,
-                            boardingStation = nearestStationToFrom.name,
-                            alightingStation = nearestStationToTo.name,
-                            distanceMeters = busMeters,
-                            durationMinutes = busRideDuration,
-                            directions = "Urcă în ${matchingLine.name} din stația ${nearestStationToFrom.name} și mergi $stationsInBetween stații până la stația ${nearestStationToTo.name}."
-                        )
-                    )
-                    totalMinutes += busRideDuration + 3 // 3 min waiting time
-                    totalFare += 3 // 3 Lei per bus ride
-                    
-                    // Walk from station to spot
-                    val walkMeters2 = distToStationTo.toInt()
-                    val walkTime2 = max(1, (walkMeters2 / 80).toInt())
-                    if (walkMeters2 > 50) {
+
+                    if (conn.line2 != null && conn.transferStation != null) {
+                        // MULTI-HOP / TRANSFER ITINERARY
+                        val stations1 = abs(conn.idxTo1 - conn.idxFrom1)
+                        val transitTime1 = stations1 * 4 + 2
+                        val label1 = when (conn.line1.type) {
+                            LegType.METRO -> "Metroul"
+                            LegType.TROLLEY -> "Troleibuzul"
+                            LegType.TRAIN -> "Trenul"
+                            else -> "Autobuzul"
+                        }
                         legs.add(
                             RouteLeg(
-                                fromPlaceName = nearestStationToTo.name,
+                                fromPlaceName = bestFrom.name,
+                                toPlaceName = conn.transferStation.name,
+                                type = conn.line1.type,
+                                busLineName = conn.line1.name,
+                                busColorHex = conn.line1.colorHex,
+                                boardingStation = bestFrom.name,
+                                alightingStation = conn.transferStation.name,
+                                distanceMeters = (stations1 * 1000),
+                                durationMinutes = transitTime1,
+                                directions = "Urcă în $label1 ${conn.line1.name} la ${bestFrom.name}, mergi $stations1 stații și coboară la ${conn.transferStation.name}."
+                            )
+                        )
+                        totalMinutes += transitTime1 + 3
+                        totalFare += 3
+
+                        // Wait / change vehicles
+                        legs.add(
+                            RouteLeg(
+                                fromPlaceName = conn.transferStation.name,
+                                toPlaceName = conn.transferStation.name,
+                                type = LegType.WALK,
+                                distanceMeters = 50,
+                                durationMinutes = 4,
+                                directions = "Schimbă mijlocul de transport în stația ${conn.transferStation.name} (~4 min)."
+                            )
+                        )
+                        totalMinutes += 4
+
+                        // Hop 2
+                        val stations2 = abs(conn.idxTo2 - conn.idxFrom2)
+                        val transitTime2 = stations2 * 4 + 2
+                        val label2 = when (conn.line2.type) {
+                            LegType.METRO -> "Metroul"
+                            LegType.TROLLEY -> "Troleibuzul"
+                            LegType.TRAIN -> "Trenul"
+                            else -> "Autobuzul"
+                        }
+                        legs.add(
+                            RouteLeg(
+                                fromPlaceName = conn.transferStation.name,
+                                toPlaceName = bestTo.name,
+                                type = conn.line2.type,
+                                busLineName = conn.line2.name,
+                                busColorHex = conn.line2.colorHex,
+                                boardingStation = conn.transferStation.name,
+                                alightingStation = bestTo.name,
+                                distanceMeters = (stations2 * 1000),
+                                durationMinutes = transitTime2,
+                                directions = "Urcă în $label2 ${conn.line2.name} și călătorește $stations2 stații până la ${bestTo.name}."
+                            )
+                        )
+                        totalMinutes += transitTime2 + 3
+                        totalFare += 3
+                    } else {
+                        // DIRECT SINGLE-HOP ROUTE
+                        val stationsInBetween = abs(conn.idxTo1 - conn.idxFrom1)
+                        val transitTime = stationsInBetween * 4 + 2
+                        val labelVal = when (conn.line1.type) {
+                            LegType.METRO -> "Metroul"
+                            LegType.TROLLEY -> "Troleibuzul"
+                            LegType.TRAIN -> "Trenul"
+                            else -> "Autobuzul"
+                        }
+                        val transitMeters = (stationsInBetween * 1000)
+                        legs.add(
+                            RouteLeg(
+                                fromPlaceName = bestFrom.name,
+                                toPlaceName = bestTo.name,
+                                type = conn.line1.type,
+                                busLineName = conn.line1.name,
+                                busColorHex = conn.line1.colorHex,
+                                boardingStation = bestFrom.name,
+                                alightingStation = bestTo.name,
+                                distanceMeters = transitMeters,
+                                durationMinutes = transitTime,
+                                directions = "Călătorește cu $labelVal ${conn.line1.name} din stația ${bestFrom.name} până la stația ${bestTo.name} ($stationsInBetween stații)."
+                            )
+                        )
+                        totalMinutes += transitTime + 3
+                        totalFare += 3
+                    }
+
+                    // Walk to destination spot
+                    val walkMeters2 = finalDistToStationTo.toInt()
+                    val walkTime2 = max(1, (walkMeters2 / 80).toInt())
+                    if (walkMeters2 > 40) {
+                        legs.add(
+                            RouteLeg(
+                                fromPlaceName = bestTo.name,
                                 toPlaceName = to.name,
                                 type = LegType.WALK,
                                 distanceMeters = walkMeters2,
                                 durationMinutes = walkTime2,
-                                directions = "Mergi pe jos ${walkMeters2} m de la stația ${nearestStationToTo.name} până la ${to.name}."
+                                directions = "De la stația ${bestTo.name}, mergi pe jos ${walkMeters2} m până la ${to.name}."
                             )
                         )
                         totalMinutes += walkTime2
                     }
-                    
+
                     totalMinutes += to.visitDurationMinutes
                 } else {
-                    // No direct bus, but stations exist. We can offer a transfer if they are far, or just walk/simulate taxi.
-                    // For simplicity and solid user experience, we can offer a direct scenic walk or a combination bus leg which we generate:
+                    // Fallback to walk direct if transit connection failed but enabled modes exist
                     val meters = distDirect.toInt()
                     val duration = max(2, (meters / 80).toInt())
                     legs.add(
@@ -448,7 +804,7 @@ object TransitNetwork {
                             type = LegType.WALK,
                             distanceMeters = meters,
                             durationMinutes = duration,
-                            directions = "Mergi pe jos ${meters} m (~$duration min) prin zonă istorică sau ia un taxi/ridesharing (distanță scurtă, nu există linie directă de autobuz rapidă)."
+                            directions = "Mergi pe jos ${meters} m (~$duration min) până la ${to.name}."
                         )
                     )
                     totalMinutes += duration + to.visitDurationMinutes
@@ -460,7 +816,8 @@ object TransitNetwork {
             orderedSpots = ordered,
             legs = legs,
             totalDurationMinutes = totalMinutes,
-            totalBusFareLei = totalFare
+            totalBusFareLei = totalFare,
+            totalTaxiCostLei = totalTaxiCost
         )
     }
 }

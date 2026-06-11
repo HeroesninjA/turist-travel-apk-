@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,6 +23,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -60,9 +64,15 @@ fun MainScreen(
 ) {
     val selectedCity by viewModel.selectedCity.collectAsState()
     val citySpots by viewModel.citySpots.collectAsState()
+    val openaiApiKey by viewModel.openaiApiKey.collectAsState()
+    val aiProvider by viewModel.aiProvider.collectAsState()
+    val openrouterApiKey by viewModel.openrouterApiKey.collectAsState()
+    val openrouterModel by viewModel.openrouterModel.collectAsState()
     val customStartSpot by viewModel.customStartSpot.collectAsState()
     val savedItineraries by viewModel.savedItineraries.collectAsState()
     val optimizedJourney by viewModel.optimizedJourney.collectAsState()
+    val routingPreference by viewModel.routingPreference.collectAsState()
+    val enabledTransitModes by viewModel.enabledTransitModes.collectAsState()
     val aiRecommendation by viewModel.aiRecommendation.collectAsState()
     val isAiLoading by viewModel.isAiLoading.collectAsState()
     val currentWeather by viewModel.currentWeather.collectAsState()
@@ -96,12 +106,28 @@ fun MainScreen(
     var isHighResolutionMap by rememberSaveable { mutableStateOf(true) }
     var isSoundAlertEnabled by rememberSaveable { mutableStateOf(true) }
     var isEnglishLanguage by rememberSaveable { mutableStateOf(false) }
+    var appSkin by rememberSaveable { mutableStateOf("MODERN") } // "MODERN" vs "VINTAGE_RPG"
 
     // --- LIVE GPS LOCATION & ROUTE NAVIGATION SIMULATION ---
     var userGpsLocation by remember(selectedCity) { mutableStateOf<Pair<Double, Double>?>(null) }
     var isSimulatingNavigation by remember { mutableStateOf(false) }
     var activeNavigationLegIndex by remember { mutableStateOf(0) }
     var navigationProgressFraction by remember { mutableStateOf(0f) }
+
+    // Central state for live transit vehicles shared with the map overlay
+    var liveTransitVehiclesGlobal by remember(selectedCity) {
+        mutableStateOf(TransportApiEngine.simulateLiveVehicles(selectedCity))
+    }
+
+    var focusedTransitVehicle by remember(selectedCity) { mutableStateOf<com.example.domain.LiveTransitVehicle?>(null) }
+
+    // Live update loop for transit vehicle positions (refreshes every 6 seconds)
+    LaunchedEffect(selectedCity) {
+        while (true) {
+            kotlinx.coroutines.delay(6000)
+            liveTransitVehiclesGlobal = TransportApiEngine.simulateLiveVehicles(selectedCity)
+        }
+    }
 
     var useRealDeviceGps by rememberSaveable { mutableStateOf(false) }
     var mapActionMode by rememberSaveable { mutableStateOf("ADD_SPOT") } // "ADD_SPOT" or "SET_GPS"
@@ -117,12 +143,14 @@ fun MainScreen(
         if (fineGranted || coarseGranted) {
             useRealDeviceGps = true
             scope.launch {
-                snackbarHostState.showSnackbar("🛰️ GPS Real Activ! Harta îți va urmări poziția fizică din satelit.")
+                val msg = if (isEnglishLanguage) "🛰️ Real GPS Active! Maps will track your physical location via satellite." else "🛰️ GPS Real Activ! Harta îți va urmări poziția fizică din satelit."
+                snackbarHostState.showSnackbar(msg)
             }
         } else {
             useRealDeviceGps = false
             scope.launch {
-                snackbarHostState.showSnackbar("❌ Permisiunea GPS refuzată. Modul Satelit are nevoie de permisiuni.")
+                val msg = if (isEnglishLanguage) "❌ GPS permission denied. Satellite Mode requires permissions." else "❌ Permisiunea GPS refuzată. Modul Satelit are nevoie de permisiuni."
+                snackbarHostState.showSnackbar(msg)
             }
         }
     }
@@ -210,7 +238,92 @@ fun MainScreen(
         }
     }
 
-    Scaffold(
+    val currentColorScheme = if (appSkin == "VINTAGE_RPG") {
+        darkColorScheme(
+            primary = Color(0xFFC5A059),
+            onPrimary = Color(0xFF1E100A),
+            secondary = Color(0xFF8C6D45),
+            onSecondary = Color(0xFFFCF3D7),
+            tertiary = Color(0xFF26A69A),
+            background = Color(0xFF1C110A),
+            surface = Color(0xFF261910),
+            onBackground = Color(0xFFEADBBE),
+            onSurface = Color(0xFFEADBBE),
+            surfaceVariant = Color(0xFF382317),
+            onSurfaceVariant = Color(0xFFC4AD85),
+            outline = Color(0xFF6E4D36),
+            outlineVariant = Color(0xFF4C3322)
+        )
+    } else {
+        MaterialTheme.colorScheme
+    }
+
+    val currentTypography = if (appSkin == "VINTAGE_RPG") {
+        Typography(
+            titleLarge = TextStyle(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                fontSize = 21.sp,
+                letterSpacing = 0.5.sp
+            ),
+            titleMedium = TextStyle(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                letterSpacing = 0.5.sp
+            ),
+            titleSmall = TextStyle(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                letterSpacing = 0.5.sp
+            ),
+            bodyLarge = TextStyle(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Normal,
+                fontSize = 15.sp,
+                letterSpacing = 0.25.sp
+            ),
+            bodyMedium = TextStyle(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Normal,
+                fontSize = 13.sp,
+                letterSpacing = 0.25.sp
+            ),
+            bodySmall = TextStyle(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Normal,
+                fontSize = 11.sp,
+                letterSpacing = 0.25.sp
+            ),
+            labelLarge = TextStyle(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                letterSpacing = 0.5.sp
+            ),
+            labelMedium = TextStyle(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Medium,
+                fontSize = 11.sp,
+                letterSpacing = 0.5.sp
+            ),
+            labelSmall = TextStyle(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                fontSize = 9.sp,
+                letterSpacing = 0.5.sp
+            )
+        )
+    } else {
+        MaterialTheme.typography
+    }
+
+    MaterialTheme(
+        colorScheme = currentColorScheme,
+        typography = currentTypography
+    ) {
+        Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -253,30 +366,30 @@ fun MainScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Quick city picker in actions bar
-                        Row(
+                        // Clean active city chip badge
+                        Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(30.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .padding(4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f))
+                                .clickable { showSettingsDialog = true }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
                         ) {
-                            listOf("București", "Cluj-Napoca", "Brașov").forEach { city ->
-                                val isActive = selectedCity == city
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(20.dp))
-                                        .background(if (isActive) MaterialTheme.colorScheme.primary else Color.Transparent)
-                                        .clickable { viewModel.selectCity(city) }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    Text(
-                                        text = city,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isActive) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Place,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = translateCityName(selectedCity, isEnglishLanguage),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
                             }
                         }
 
@@ -294,6 +407,31 @@ fun MainScreen(
                             Icon(
                                 imageVector = if (isDashboardVisible) Icons.Default.KeyboardArrowDown else Icons.Default.Menu,
                                 contentDescription = if (isDashboardVisible) "Ascunde panou" else "Afișează panou",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        // Alternative RPG Style/Skin Toggle button
+                        FilledIconButton(
+                            onClick = { 
+                                appSkin = if (appSkin == "MODERN") "VINTAGE_RPG" else "MODERN"
+                                if (appSkin == "VINTAGE_RPG") {
+                                    mapColorSchemeStyle = "Vintage Parchment"
+                                } else {
+                                    mapColorSchemeStyle = "Slate Neon"
+                                }
+                            },
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFFC5A059) else MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = if (appSkin == "VINTAGE_RPG") Color(0xFF1E100A) else MaterialTheme.colorScheme.onSecondaryContainer
+                            ),
+                            modifier = Modifier
+                                .size(36.dp)
+                                .testTag("theme_skin_toggle_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Build,
+                                contentDescription = "Alternative Interface",
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -343,7 +481,7 @@ fun MainScreen(
 
                 InteractiveMap(
                     city = selectedCity,
-                    spots = citySpots,
+                    spots = if (isSimulatingNavigation) citySpots.filter { it.isSelected } else citySpots,
                     customStartSpot = customStartSpot,
                     stations = stations,
                     lines = lines,
@@ -395,6 +533,7 @@ fun MainScreen(
                             val seedCoords = when (selectedCity) {
                                 "București" -> Pair(44.4411, 26.0973) // near Ateneul Român
                                 "Brașov" -> Pair(45.6540, 25.6030)
+                                "Câmpina" -> Pair(45.1265, 25.7345)
                                 else -> Pair(46.7684, 23.5862) // Memorandului Cluj
                             }
                             userGpsLocation = seedCoords
@@ -472,7 +611,19 @@ fun MainScreen(
                     isTransitLinesVisible = isTransitLinesVisible,
                     mapColorSchemeStyle = mapColorSchemeStyle,
                     isHighResolutionMap = isHighResolutionMap,
-                    isEnglish = isEnglishLanguage
+                    isEnglish = isEnglishLanguage,
+                    liveTransitVehicles = liveTransitVehiclesGlobal,
+                    focusedTransitVehicle = focusedTransitVehicle,
+                    onFocusedVehicleDismiss = { focusedTransitVehicle = null },
+                    onVehicleClick = { vehicle ->
+                        focusedTransitVehicle = vehicle
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                if (isEnglishLanguage) "⚡ Radar Lock: Auto-focusing on Transit line ${vehicle.lineName}"
+                                else "⚡ Radar localizat: Focalizare automată pe linia ${vehicle.lineName}"
+                            )
+                        }
+                    }
                 )
                 
                 // Starting place indicator badge overlay on map corners
@@ -507,7 +658,16 @@ fun MainScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1.0f)
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .run {
+                                if (appSkin == "VINTAGE_RPG") {
+                                    this.border(
+                                        width = 2.dp,
+                                        brush = Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))),
+                                        shape = RoundedCornerShape(20.dp)
+                                    )
+                                } else this
+                            },
                         shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                     ) {
@@ -527,6 +687,27 @@ fun MainScreen(
                                         }
                                     }
                                 },
+                                onShareClick = {
+                                    optimizedJourney?.let {
+                                        val names = it.orderedSpots.joinToString(" ➔ ") { s -> translateSpotName(s.name, isEnglishLanguage) }
+                                        val startName = translateSpotName(customStartSpot?.name ?: com.example.domain.TransitNetwork.getStartSpot(selectedCity).name, isEnglishLanguage)
+                                        val details = (if (isEnglishLanguage) "Start: $startName\n" else "Pornire: $startName\n") +
+                                                (if (isEnglishLanguage) "Route: $names\n\n" else "Traseu: $names\n\n") +
+                                                (if (isEnglishLanguage) "Transport stages:\n" else "Etape de transport:\n") +
+                                                it.legs.joinToString("\n") { leg ->
+                                                    "- ${translateSpotName(leg.directions, isEnglishLanguage)} (${leg.durationMinutes} min)"
+                                                }
+                                        val shareIntent = android.content.Intent().apply {
+                                            action = android.content.Intent.ACTION_SEND
+                                            putExtra(android.content.Intent.EXTRA_TEXT, 
+                                                if (isEnglishLanguage) "Here is my itinerary for $selectedCity:\n\n$details" 
+                                                else "Aici este itinerarul meu pentru $selectedCity:\n\n$details"
+                                            )
+                                            type = "text/plain"
+                                        }
+                                        context.startActivity(android.content.Intent.createChooser(shareIntent, null))
+                                    }
+                                },
                                 isCollapsed = false,
                                 onToggleDashboard = { isDashboardExpanded = false },
                                 isSimulatingNavigation = isSimulatingNavigation,
@@ -535,6 +716,7 @@ fun MainScreen(
                                         val seedCoords = when (selectedCity) {
                                             "București" -> Pair(44.4411, 26.0973)
                                             "Brașov" -> Pair(45.6540, 25.6030)
+                                            "Câmpina" -> Pair(45.1265, 25.7345)
                                             else -> Pair(46.7684, 23.5862)
                                         }
                                         userGpsLocation = seedCoords
@@ -564,142 +746,291 @@ fun MainScreen(
                                 isEnglish = isEnglishLanguage
                             )
 
-                            // Tab Row
+                            // Premium Adaptive Tab Row
                             TabRow(
                                 selectedTabIndex = selectedDashboardTab,
-                                containerColor = Color.Transparent,
-                                modifier = Modifier.fillMaxWidth()
+                                containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF1C110A) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                indicator = {}, // Hide default ugly thick line indicator
+                                divider = {}, // Hide standard bottom divider
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .run {
+                                        if (appSkin == "VINTAGE_RPG") {
+                                            this.border(
+                                                width = 1.dp,
+                                                color = Color(0xFF6E4D36),
+                                                shape = RoundedCornerShape(12.dp)
+                                            )
+                                        } else {
+                                            this.border(
+                                                width = 1.dp,
+                                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                                                shape = RoundedCornerShape(12.dp)
+                                            )
+                                        }
+                                    }
                             ) {
+                                // Tab 0: Attractions Checklist
+                                val isTab0Selected = selectedDashboardTab == 0
                                 Tab(
-                                    selected = selectedDashboardTab == 0,
+                                    selected = isTab0Selected,
                                     onClick = { selectedDashboardTab = 0 },
-                                    modifier = Modifier.testTag("tab_spots_checklist")
+                                    modifier = Modifier
+                                        .testTag("tab_spots_checklist")
+                                        .padding(4.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isTab0Selected) {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFF382317) else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                            } else Color.Transparent
+                                        )
+                                        .run {
+                                            if (isTab0Selected && appSkin == "VINTAGE_RPG") {
+                                                this.border(1.dp, Color(0xFFC5A059), RoundedCornerShape(8.dp))
+                                            } else if (isTab0Selected) {
+                                                this.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                            } else this
+                                        }
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.Center,
-                                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
+                                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 2.dp)
                                     ) {
                                         Icon(
                                             imageVector = Icons.AutoMirrored.Filled.List,
                                             contentDescription = null,
-                                            tint = if (selectedDashboardTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(16.dp)
+                                            tint = if (isTab0Selected) {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFFC5A059) else MaterialTheme.colorScheme.primary
+                                            } else {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFFC4AD85).copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            },
+                                            modifier = Modifier.size(15.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
                                         Text(
                                             text = if (isEnglishLanguage) "Attractions" else "Atracții",
                                             fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (selectedDashboardTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = if (isTab0Selected) FontWeight.ExtraBold else FontWeight.Bold,
+                                            color = if (isTab0Selected) {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFFC5A059) else MaterialTheme.colorScheme.primary
+                                            } else {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFFC4AD85).copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            },
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
+
+                                // Tab 1: Itinerary Timeline
+                                val isTab1Selected = selectedDashboardTab == 1
                                 Tab(
-                                    selected = selectedDashboardTab == 1,
+                                    selected = isTab1Selected,
                                     onClick = { selectedDashboardTab = 1 },
-                                    modifier = Modifier.testTag("tab_itinerary_timeline")
+                                    modifier = Modifier
+                                        .testTag("tab_itinerary_timeline")
+                                        .padding(4.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isTab1Selected) {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFF382317) else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                            } else Color.Transparent
+                                        )
+                                        .run {
+                                            if (isTab1Selected && appSkin == "VINTAGE_RPG") {
+                                                this.border(1.dp, Color(0xFFC5A059), RoundedCornerShape(8.dp))
+                                            } else if (isTab1Selected) {
+                                                this.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                            } else this
+                                        }
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.Center,
-                                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
+                                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 2.dp)
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.DateRange,
                                             contentDescription = null,
-                                            tint = if (selectedDashboardTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(16.dp)
+                                            tint = if (isTab1Selected) {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFFC5A059) else MaterialTheme.colorScheme.primary
+                                            } else {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFFC4AD85).copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            },
+                                            modifier = Modifier.size(15.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
                                         Text(
                                             text = if (isEnglishLanguage) "Itinerary" else "Itinerar",
                                             fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (selectedDashboardTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = if (isTab1Selected) FontWeight.ExtraBold else FontWeight.Bold,
+                                            color = if (isTab1Selected) {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFFC5A059) else MaterialTheme.colorScheme.primary
+                                            } else {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFFC4AD85).copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            },
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
+
+                                // Tab 2: Testing logs
+                                val isTab2Selected = selectedDashboardTab == 2
                                 Tab(
-                                    selected = selectedDashboardTab == 2,
+                                    selected = isTab2Selected,
                                     onClick = { selectedDashboardTab = 2 },
-                                    modifier = Modifier.testTag("tab_live_testing")
+                                    modifier = Modifier
+                                        .testTag("tab_live_testing")
+                                        .padding(4.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isTab2Selected) {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFF1E2822) else Color(0xFF10B981).copy(alpha = 0.15f)
+                                            } else Color.Transparent
+                                        )
+                                        .run {
+                                            if (isTab2Selected && appSkin == "VINTAGE_RPG") {
+                                                this.border(1.dp, Color(0xFF10B981), RoundedCornerShape(8.dp))
+                                            } else if (isTab2Selected) {
+                                                this.border(1.dp, Color(0xFF10B981).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                            } else this
+                                        }
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.Center,
-                                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
+                                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 2.dp)
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.CheckCircle,
                                             contentDescription = null,
-                                            tint = if (selectedDashboardTab == 2) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(16.dp)
+                                            tint = if (isTab2Selected) {
+                                                Color(0xFF10B981)
+                                            } else {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFFC4AD85).copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            },
+                                            modifier = Modifier.size(15.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
                                         Text(
                                             text = if (isEnglishLanguage) "Testing" else "Testare",
                                             fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (selectedDashboardTab == 2) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = if (isTab2Selected) FontWeight.ExtraBold else FontWeight.Bold,
+                                            color = if (isTab2Selected) {
+                                                Color(0xFF10B981)
+                                            } else {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFFC4AD85).copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            },
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
+
+                                // Tab 3: AI Guide Recommendation
+                                val isTab3Selected = selectedDashboardTab == 3
                                 Tab(
-                                    selected = selectedDashboardTab == 3,
+                                    selected = isTab3Selected,
                                     onClick = { selectedDashboardTab = 3 },
-                                    modifier = Modifier.testTag("tab_ai_guide")
+                                    modifier = Modifier
+                                        .testTag("tab_ai_guide")
+                                        .padding(4.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isTab3Selected) {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFF382317) else Color(0xFFEAB308).copy(alpha = 0.15f)
+                                            } else Color.Transparent
+                                        )
+                                        .run {
+                                            if (isTab3Selected && appSkin == "VINTAGE_RPG") {
+                                                this.border(1.dp, Color(0xFFEAB308), RoundedCornerShape(8.dp))
+                                            } else if (isTab3Selected) {
+                                                this.border(1.dp, Color(0xFFEAB308).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                            } else this
+                                        }
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.Center,
-                                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
+                                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 2.dp)
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Star,
                                             contentDescription = null,
-                                            tint = if (selectedDashboardTab == 3) Color(0xFFEAB308) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(16.dp)
+                                            tint = if (isTab3Selected) {
+                                                Color(0xFFEAB308)
+                                            } else {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFFC4AD85).copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            },
+                                            modifier = Modifier.size(15.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
                                         Text(
                                             text = if (isEnglishLanguage) "AI Guide" else "Ghid AI",
                                             fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (selectedDashboardTab == 3) Color(0xFFEAB308) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = if (isTab3Selected) FontWeight.ExtraBold else FontWeight.Bold,
+                                            color = if (isTab3Selected) {
+                                                Color(0xFFEAB308)
+                                            } else {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFFC4AD85).copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            },
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
+
+                                // Tab 4: Saved Local Offline Itineraries
+                                val isTab4Selected = selectedDashboardTab == 4
                                 Tab(
-                                    selected = selectedDashboardTab == 4,
+                                    selected = isTab4Selected,
                                     onClick = { selectedDashboardTab = 4 },
-                                    modifier = Modifier.testTag("tab_saved_itineraries")
+                                    modifier = Modifier
+                                        .testTag("tab_saved_itineraries")
+                                        .padding(4.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isTab4Selected) {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFF382317) else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                            } else Color.Transparent
+                                        )
+                                        .run {
+                                            if (isTab4Selected && appSkin == "VINTAGE_RPG") {
+                                                this.border(1.dp, Color(0xFFC5A059), RoundedCornerShape(8.dp))
+                                            } else if (isTab4Selected) {
+                                                this.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                            } else this
+                                        }
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.Center,
-                                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
+                                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 2.dp)
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Favorite,
                                             contentDescription = null,
-                                            tint = if (selectedDashboardTab == 4) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(16.dp)
+                                            tint = if (isTab4Selected) {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFFC5A059) else MaterialTheme.colorScheme.primary
+                                            } else {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFFC4AD85).copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            },
+                                            modifier = Modifier.size(15.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
                                         Text(
                                             text = if (isEnglishLanguage) "Saved" else "Salvate",
                                             fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (selectedDashboardTab == 4) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = if (isTab4Selected) FontWeight.ExtraBold else FontWeight.Bold,
+                                            color = if (isTab4Selected) {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFFC5A059) else MaterialTheme.colorScheme.primary
+                                            } else {
+                                                if (appSkin == "VINTAGE_RPG") Color(0xFFC4AD85).copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            },
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
@@ -707,7 +1038,9 @@ fun MainScreen(
                                 }
                             }
 
-                            HorizontalDivider()
+                            HorizontalDivider(
+                                color = if (appSkin == "VINTAGE_RPG") Color(0xFF4C3322) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                            )
 
                             // Tab Contents Switching
                             Box(
@@ -734,7 +1067,7 @@ fun MainScreen(
                                     when (targetTab) {
                                         0 -> SpotsChecklistTab(
                                             city = selectedCity,
-                                            spots = citySpots,
+                                            spots = if (isSimulatingNavigation) citySpots.filter { it.isSelected } else citySpots,
                                             customStartSpot = customStartSpot,
                                             onToggle = { id, selected -> viewModel.toggleSpotSelection(id, selected) },
                                             onDeselectAll = { viewModel.deselectAllSpots() },
@@ -752,7 +1085,12 @@ fun MainScreen(
                                             isEnglish = isEnglishLanguage,
                                             weather = currentWeather,
                                             selectedPreset = selectedWeatherPreset,
-                                            onSelectPreset = { preset -> viewModel.setWeatherPreset(preset) }
+                                            onSelectPreset = { preset -> viewModel.setWeatherPreset(preset) },
+                                            routingPreference = routingPreference,
+                                            onPrefChange = { viewModel.updateRoutingPreference(it) },
+                                            enabledTransitModes = enabledTransitModes,
+                                            onTransitModeToggle = { viewModel.toggleTransitMode(it) },
+                                            appSkin = appSkin
                                         )
                                         1 -> TimelineTab(isEnglish = isEnglishLanguage,
                                             journey = optimizedJourney,
@@ -760,12 +1098,14 @@ fun MainScreen(
                                             startHour = "09:00",
                                             city = selectedCity,
                                             isSimulatingNavigation = isSimulatingNavigation,
+                                            activeLegIndex = activeNavigationLegIndex,
                                             onStartSimulationClick = {
                                                 if (userGpsLocation == null) {
                                                     // Auto-enable GPS to initial position when starting routing simulation
                                                     val seedCoords = when (selectedCity) {
                                                         "București" -> Pair(44.4411, 26.0973)
                                                         "Brașov" -> Pair(45.6540, 25.6030)
+                                                        "Câmpina" -> Pair(45.1265, 25.7345)
                                                         else -> Pair(46.7684, 23.5862)
                                                     }
                                                     userGpsLocation = seedCoords
@@ -790,7 +1130,18 @@ fun MainScreen(
                                                         else "Ghidaj oprit."
                                                     )
                                                 }
-                                            }
+                                            },
+                                            liveTransitVehicles = liveTransitVehiclesGlobal,
+                                            onVehicleClick = { vehicle ->
+                                                focusedTransitVehicle = vehicle
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        if (isEnglishLanguage) "⚡ Radar Lock: Auto-focusing on Transit line ${vehicle.lineName}"
+                                                        else "⚡ Radar localizat: Focalizare automată pe linia ${vehicle.lineName}"
+                                                    )
+                                                }
+                                            },
+                                            appSkin = appSkin
                                         )
                                         2 -> LiveTestingTab(
                                             isEnglish = isEnglishLanguage,
@@ -820,18 +1171,23 @@ fun MainScreen(
                                             },
                                             onClearLogs = {
                                                 viewModel.clearAllTestingLogsCurrentCity()
-                                            }
+                                            },
+                                            appSkin = appSkin
                                         )
                                         3 -> AiGuideTab(
                                             recommendationText = aiRecommendation,
                                             isLoading = isAiLoading,
                                             onCallAi = { viewModel.askGeminiForItinerary(isEnglishLanguage) },
-                                            isEnglish = isEnglishLanguage
+                                            isEnglish = isEnglishLanguage,
+                                            aiProvider = aiProvider,
+                                            appSkin = appSkin
                                         )
                                         4 -> SavedItinerariesTab(
                                             isEnglish = isEnglishLanguage,
                                             itineraries = savedItineraries,
-                                            onDelete = { id -> viewModel.deleteSavedItinerary(id) }
+                                            onDelete = { id -> viewModel.deleteSavedItinerary(id) },
+                                            onClearAll = { viewModel.clearAllSavedItineraries() },
+                                            appSkin = appSkin
                                         )
                                     }
                                 }
@@ -843,7 +1199,16 @@ fun MainScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .run {
+                                if (appSkin == "VINTAGE_RPG") {
+                                    this.border(
+                                        width = 2.dp,
+                                        brush = Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))),
+                                        shape = RoundedCornerShape(16.dp)
+                                    )
+                                } else this
+                            },
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
@@ -862,6 +1227,27 @@ fun MainScreen(
                                     }
                                 }
                             },
+                            onShareClick = {
+                                optimizedJourney?.let {
+                                    val names = it.orderedSpots.joinToString(" ➔ ") { s -> translateSpotName(s.name, isEnglishLanguage) }
+                                    val startName = translateSpotName(customStartSpot?.name ?: com.example.domain.TransitNetwork.getStartSpot(selectedCity).name, isEnglishLanguage)
+                                    val details = (if (isEnglishLanguage) "Start: $startName\n" else "Pornire: $startName\n") +
+                                            (if (isEnglishLanguage) "Route: $names\n\n" else "Traseu: $names\n\n") +
+                                            (if (isEnglishLanguage) "Transport stages:\n" else "Etape de transport:\n") +
+                                            it.legs.joinToString("\n") { leg ->
+                                                "- ${translateSpotName(leg.directions, isEnglishLanguage)} (${leg.durationMinutes} min)"
+                                            }
+                                    val shareIntent = android.content.Intent().apply {
+                                        action = android.content.Intent.ACTION_SEND
+                                        putExtra(android.content.Intent.EXTRA_TEXT, 
+                                            if (isEnglishLanguage) "Here is my itinerary for $selectedCity:\n\n$details" 
+                                            else "Aici este itinerarul meu pentru $selectedCity:\n\n$details"
+                                        )
+                                        type = "text/plain"
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(shareIntent, null))
+                                }
+                            },
                             isCollapsed = true,
                             onToggleDashboard = { isDashboardExpanded = true },
                             onHideCompletely = { isDashboardVisible = false },
@@ -872,6 +1258,7 @@ fun MainScreen(
                                     val seedCoords = when (selectedCity) {
                                         "București" -> Pair(44.4411, 26.0973)
                                         "Brașov" -> Pair(45.6540, 25.6030)
+                                        "Câmpina" -> Pair(45.1265, 25.7345)
                                         else -> Pair(46.7684, 23.5862)
                                     }
                                     userGpsLocation = seedCoords
@@ -902,13 +1289,20 @@ fun MainScreen(
     if (showAddSpotDialog) {
         AlertDialog(
             onDismissRequest = { showAddSpotDialog = false },
+            modifier = if (appSkin == "VINTAGE_RPG") {
+                Modifier.border(
+                    BorderStroke(1.8.dp, Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45)))),
+                    shape = RoundedCornerShape(24.dp)
+                )
+            } else Modifier,
+            containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF1C110A) else MaterialTheme.colorScheme.surface,
             title = {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(Icons.Default.LocationOn, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text("Adaugă Punct Turistic Nou")
+                    Text(if (isEnglishLanguage) "Add New Tourist Spot" else "Adaugă Punct Turistic Nou")
                 }
             },
             text = {
@@ -917,7 +1311,9 @@ fun MainScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Introdu detaliile punctului selectat direct pe hartă (Lat: ${String.format("%.4f", clickedLat)}, Lng: ${String.format("%.4f", clickedLng)}):",
+                        text = if (isEnglishLanguage) 
+                            "Enter the details of the selected point directly on the map (Lat: ${String.format("%.4f", clickedLat)}, Lng: ${String.format("%.4f", clickedLng)}):"
+                            else "Introdu detaliile punctului selectat direct pe hartă (Lat: ${String.format("%.4f", clickedLat)}, Lng: ${String.format("%.4f", clickedLng)}):",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -925,7 +1321,7 @@ fun MainScreen(
                     OutlinedTextField(
                         value = newSpotName,
                         onValueChange = { newSpotName = it },
-                        label = { Text("Nume Atracție *") },
+                        label = { Text(if (isEnglishLanguage) "Attraction Name *" else "Nume Atracție *") },
                         modifier = Modifier.fillMaxWidth().testTag("dialog_spot_name_input"),
                         singleLine = true
                     )
@@ -933,7 +1329,7 @@ fun MainScreen(
                     OutlinedTextField(
                         value = newSpotDesc,
                         onValueChange = { newSpotDesc = it },
-                        label = { Text("Descriere Scurtă") },
+                        label = { Text(if (isEnglishLanguage) "Short Description" else "Descriere Scurtă") },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 2
                     )
@@ -941,7 +1337,7 @@ fun MainScreen(
                     OutlinedTextField(
                         value = newSpotDuration,
                         onValueChange = { newSpotDuration = it },
-                        label = { Text("Timp estimat în vizită (minute)") },
+                        label = { Text(if (isEnglishLanguage) "Estimated visit time (minutes)" else "Timp estimat în vizită (minute)") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -975,22 +1371,26 @@ fun MainScreen(
                             )
                             showAddSpotDialog = false
                             scope.launch {
-                                snackbarHostState.showSnackbar("S-a adăugat: $newSpotName")
+                                snackbarHostState.showSnackbar(
+                                    if (isEnglishLanguage) "Added: $newSpotName" else "S-a adăugat: $newSpotName"
+                                )
                             }
                         } else {
                             scope.launch {
-                                snackbarHostState.showSnackbar("Numele atracției este obligatoriu!")
+                                snackbarHostState.showSnackbar(
+                                    if (isEnglishLanguage) "Attraction name is required!" else "Numele atracției este obligatoriu!"
+                                )
                             }
                         }
                     },
                     modifier = Modifier.testTag("dialog_confirm_button")
                 ) {
-                    Text("Salvează")
+                    Text(if (isEnglishLanguage) "Save" else "Salvează")
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showAddSpotDialog = false }) {
-                    Text("Anulează")
+                    Text(if (isEnglishLanguage) "Cancel" else "Anulează")
                 }
             }
         )
@@ -999,6 +1399,8 @@ fun MainScreen(
     SettingsDialog(
         show = showSettingsDialog,
         onDismiss = { showSettingsDialog = false },
+        selectedCity = selectedCity,
+        onCityChange = { viewModel.selectCity(it) },
         isStationsVisible = isStationsVisible,
         onStationsToggle = { isStationsVisible = it },
         isTransitLinesVisible = isTransitLinesVisible,
@@ -1012,8 +1414,27 @@ fun MainScreen(
         isSoundEnabled = isSoundAlertEnabled,
         onSoundEnabledToggle = { isSoundAlertEnabled = it },
         isEnglish = isEnglishLanguage,
-        onLanguageToggle = { isEnglishLanguage = it }
+        onLanguageToggle = { isEnglishLanguage = it },
+        openaiApiKey = openaiApiKey,
+        onOpenaiApiKeyChange = { viewModel.updateOpenAiApiKey(it) },
+        aiProvider = aiProvider,
+        onAiProviderChange = { viewModel.updateAiProvider(it) },
+        openrouterApiKey = openrouterApiKey,
+        onOpenrouterApiKeyChange = { viewModel.updateOpenRouterApiKey(it) },
+        openrouterModel = openrouterModel,
+        onOpenrouterModelChange = { viewModel.updateOpenRouterModel(it) },
+        appSkin = appSkin,
+        onAppSkinChange = { appSkin = it },
+        onFactoryReset = {
+            viewModel.factoryResetData()
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    if (isEnglishLanguage) "All user data has been cleared!" else "Toate datele au fost șterse!"
+                )
+            }
+        }
     )
+    }
 }
 
 // --- Dynamic Optimization UI Localization Helpers ---
@@ -1049,6 +1470,31 @@ fun translateSpotName(name: String, isEnglish: Boolean): String {
         "Muzeul de Artă Contemporană (MNAC)" -> "National Museum of Contemporary Art"
         "Piața Universității" -> "University Square"
         "Opera Națională București" -> "Bucharest National Opera"
+        "Parcul Alexandru Ioan Cuza (IOR)" -> "Alexandru Ioan Cuza (IOR) Park"
+        "Therme București" -> "Therme Bucharest"
+        "Palatul Șuțu (Muzeul Bucureștiului)" -> "Sutu Palace (Bucharest History Museum)"
+        "Teatrul Național I.L. Caragiale" -> "I.L. Caragiale National Theatre"
+        "Observatorul Astronomic Vasile Urseanu" -> "Vasile Urseanu Astronomical Observatory"
+        "Parcul Kiseleff" -> "Kiseleff Park"
+        "Palatul Cantacuzino" -> "Cantacuzino Palace"
+        "Pasajul Macca-Vilacrosse" -> "Macca-Vilacrosse Passage"
+        "Palatul CEC" -> "CEC Palace"
+        "Muzeul Colecțiilor de Artă" -> "Museum of Art Collections"
+        "Palatul Justiției" -> "Palace of Justice"
+        "Palatul Patriarhiei" -> "Patriarchal Palace"
+        "Muzeul Militar Național" -> "National Military Museum"
+        "Arena Națională" -> "National Arena"
+        "Muzeul Național al Literaturii Române" -> "National Museum of Romanian Literature"
+        "Palatul Kretzulescu" -> "Kretzulescu Palace"
+        "Biserica Kretzulescu" -> "Kretzulescu Church"
+        "Muzeul Tehnic Dimitrie Leonida" -> "Dimitrie Leonida Technical Museum"
+        "Palatul Primăriei Capitalei" -> "Bucharest City Hall Palace"
+        "Turnul de Artă (Pantelimon)" -> "Art Tower (Pantelimon)"
+        "Muzeul Național al Hărților și Cărții Vechi" -> "National Museum of Maps and Old Books"
+        "Parcul Plumbuita" -> "Plumbuita Park"
+        "Parcul Circului de Stat" -> "State Circus Park"
+        "Palatul Ghica Tei" -> "Ghica Tei Palace"
+        "Cimitirul Bellu" -> "Bellu Cemetery"
 
         // Cluj starting point & presets
         "Gara Cluj-Napoca (Hotel/Start)" -> "Cluj-Napoca Railway Station (Hotel/Start)"
@@ -1108,6 +1554,19 @@ fun translateSpotName(name: String, isEnglish: Boolean): String {
         "Grădina Zoologică Brașov (Noua)" -> "Brașov Zoo (Noua)"
         "Lacul Noua & Parc Agrement" -> "Noua Lake & Leisure Park"
 
+        // Campina starting point & presets
+        "Gara Câmpina (Hotel/Start)" -> "Câmpina Railway Station (Hotel/Start)"
+        "Gara Câmpina" -> "Câmpina Railway Station"
+        "Castelul \"Iulia Hasdeu\"" -> "Iulia Hasdeu Castle"
+        "Muzeul Memorial \"Nicolae Grigorescu\"" -> "Nicolae Grigorescu Memorial Museum"
+        "Casa de Cultură Câmpina" -> "Câmpina House of Culture"
+        "Primăria Câmpina" -> "Câmpina City Hall"
+        "Biserica de Lemn \"Adormirea Maicii Domnului\"" -> "Wood Church of Dormition"
+        "Capela în stil Gotic \"Hernea\"" -> "Hernea Gothic Chapel"
+        "Bulevardul Culturii (Aleea cu Platani)" -> "Culture Boulevard (Planet Avenue)"
+        "Fântâna cu Cireși & Dealul Muscel" -> "Cherry Well & Muscel Hill"
+        "Lacul Câmpina (Lacul Peștelui)" -> "Campina Lake (Fish Lake)"
+
         else -> name
     }
 }
@@ -1129,6 +1588,17 @@ fun translateSpotDescription(description: String, isEnglish: Boolean): String {
         "Fostul Palat Regal găzduiește colecții remarcabile de artă românească." -> "The former Royal Palace, hosting remarkable collections of Romanian art."
         "Oaze de verdeață, sere exotice tropicale și mii de specii de plante în Cotroceni." -> "A green oasis with exotic tropical greenhouses and thousands of plant species in Cotroceni."
         "Parc istoric frumos cu Mausoleul impunător și fântâni elegante." -> "Beautiful historical park with a majestic Mausoleum and elegant fountains."
+
+        // Campina descriptions
+        "Un castel încărcat de mister, construit de savantul Bogdan Petriceicu Hasdeu în memoria fiicei sale geniale, Iulia." -> "A mysterious castle built by B.P. Hasdeu in memory of his genius daughter, Iulia."
+        "Casa memorială unde marele pictor Nicolae Grigorescu a trăit și creat în ultimii săi ani de viață." -> "The memorial house where the great painter Nicolae Grigorescu lived and created in his twilight years."
+        "Centrul cultural principal al orașului, gazdă a numeroase spectacole, expoziții și evenimente locale." -> "The city's main cultural center, hosting numerous performances, exhibitions, and local events."
+        "Clădirea administrativă centrală din Câmpina, situată pe pitorescul Bulevard al Culturii." -> "The central administrative building of Campina, located on the scenic Culture Boulevard."
+        "O pitorească biserică istorică de lemn datând de la 1714, formată dintr-un singur trunchi de stejar." -> "A picturesque historic wooden church dating to 1714, carved out of a single massive oak trunk."
+        "O capelă gotică misterioasă, monument de arhitectură, ridicată în memoria pionierului petrolului, Dumitru Hernea." -> "A mysterious Gothic chapel built in memory of petroleum pioneer Dumitru Hernea."
+        "Zonă de promenadă superbă și relaxantă mărginită de platani uriași, considerat unul dintre cele mai ozonate locuri." -> "A gorgeous promenade flanked by towering sycamores, considered one of the highest ozone spots in Europe."
+        "Cel mai înalt punct de belvedere din zonă, oferind panorame uluitoare spre valea Doftanei și dealurile prahovene." -> "Highest local scenic outlook, offering stunning panoramas of Doftana Valley and the Prahova hills."
+        "Un lac natural liniștit ideal pentru plimbări relaxante pe mal, pescuit și evadare în mijlocul naturii locale." -> "A serene natural lake perfect for calm boardwalk strolls, recreation and local nature getaways."
         "Fostul palat luxos de protocol al soților Nicolae și Elena Ceaușescu." -> "The former luxurious private residence of Nicolae and Elena Ceaușescu."
         "Piața istorică centrală cu Memorialul Renașterii și clădiri celebre." -> "The central historical square with the Memorial of Rebirth."
         "Cel mai vechi han funcțional din Europa, oferind o ambianță tradițională excelentă." -> "The oldest active inn in Europe, offering an excellent traditional Romanian vibe."
@@ -1209,6 +1679,27 @@ fun TouristSpot.translate(isEnglish: Boolean): TouristSpot {
     )
 }
 
+fun getSpotCategoryEmoji(name: String): String {
+    val lower = name.lowercase()
+    return when {
+        lower.contains("observator") || lower.contains("astronomic") -> "🔭"
+        lower.contains("therme") || lower.contains("wellness") -> "🌴"
+        lower.contains("stadion") || lower.contains("arena națională") || lower.contains("cluj arena") || lower.contains("bt arena") -> "🏟️"
+        lower.contains("librărie") || lower.contains("cărturești") -> "📖"
+        lower.contains("teatru") || lower.contains("operă") || lower.contains("ateneu") || lower.contains("spectacol") || lower.contains("filarmonică") -> "🎭"
+        lower.contains("cimitir") -> "🪦"
+        lower.contains("pasaj") -> "🏮"
+        lower.contains("parc") || lower.contains("grădină") || lower.contains("bulevard") || lower.contains("lac") || lower.contains("cismigiu") || lower.contains("herăstrău") -> "🌳"
+        lower.contains("muzeu") || lower.contains("artă") || lower.contains("istorie") || lower.contains("antipa") || lower.contains("antichități") || lower.contains("cultur") || lower.contains("literatur") -> "🏛️"
+        lower.contains("biserică") || lower.contains("catedrală") || lower.contains("mitropolie") || lower.contains("biserica") || lower.contains("monastir") || lower.contains("sinagogă") || lower.contains("templu") || lower.contains("patriarh") -> "⛪"
+        lower.contains("castel") || lower.contains("palat") || lower.contains("cetatea") || lower.contains("cetate") || lower.contains("bastion") || lower.contains("turn") -> "🏰"
+        lower.contains("mall") || lower.contains("unirea") || lower.contains("afi") || lower.contains("bazar") || lower.contains("piața") || lower.contains("comercial") || lower.contains("plazza") -> "🛍️"
+        lower.contains("restaurant") || lower.contains("cafenea") || lower.contains("ceainărie") || lower.contains("pub") || lower.contains("bere") -> "🍽️"
+        lower.contains("grădina zoologică") || lower.contains("zoo") || lower.contains("animale") -> "🦁"
+        else -> "📍"
+    }
+}
+
 fun translateDirections(directions: String, isEnglish: Boolean): String {
     if (!isEnglish) return directions
     return directions
@@ -1276,6 +1767,7 @@ fun getTranslatedCostExplanation(city: String, isEnglish: Boolean, defaultExplan
     return when (city) {
         "București" -> "1.30 € + VAT (~6.5 Lei) for a 90-minute urban travel on any metropolitan STB line."
         "Brașov" -> "4.00 Lei for a 60-minute travel on the urban RATBV network."
+        "Câmpina" -> "3.00 Lei for a single travel on the urban Eliado Câmpina network."
         else -> "0.65 € + VAT (~3.2 Lei) for a 30-minute urban travel on any CTP Cluj line."
     }
 }
@@ -1285,6 +1777,7 @@ fun OptimizedSummaryBar(
     city: String,
     journey: OptimizedJourney?,
     onSaveClick: () -> Unit,
+    onShareClick: (() -> Unit)? = null,
     isCollapsed: Boolean = false,
     onToggleDashboard: (() -> Unit)? = null,
     isSimulatingNavigation: Boolean = false,
@@ -1339,8 +1832,14 @@ fun OptimizedSummaryBar(
                     
                     Spacer(modifier = Modifier.height(2.dp))
                     
+                    val taxiCost = journey.totalTaxiCostLei
+                    val fareText = if (taxiCost > 0) {
+                        "🎫 $fare Lei + 🚖 $taxiCost Lei (Uber/Taxi)"
+                    } else {
+                        "🎫 $fare Lei"
+                    }
                     Text(
-                        text = if (isEnglish) "🏛️ $count spot${if (count != 1) "s" else ""} • 🕒 ${hours}h ${minutes}m • 🎫 $fare Lei" else "🏛️ $count obiective • 🕒 ${hours}h ${minutes}m • 🎫 $fare Lei",
+                        text = if (isEnglish) "🏛️ $count spot${if (count != 1) "s" else ""} • 🕒 ${hours}h ${minutes}m • $fareText" else "🏛️ $count obiective • 🕒 ${hours}h ${minutes}m • $fareText",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -1415,6 +1914,32 @@ fun OptimizedSummaryBar(
                                 tint = Color.White,
                                 modifier = Modifier.size(16.dp)
                             )
+                        }
+                    }
+
+                    if (onShareClick != null) {
+                        IconButton(
+                            onClick = onShareClick,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .testTag("share_itinerary_button")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                        shape = RoundedCornerShape(8.dp)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = if (isEnglish) "Share" else "Distribuie",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
 
@@ -1519,10 +2044,23 @@ fun SpotsChecklistTab(
     isEnglish: Boolean = false,
     weather: WeatherInfo? = null,
     selectedPreset: String = "DEFAULT",
-    onSelectPreset: (String) -> Unit = {}
+    onSelectPreset: (String) -> Unit = {},
+    routingPreference: String = "DEFAULT",
+    onPrefChange: (String) -> Unit = {},
+    enabledTransitModes: Set<LegType> = emptySet(),
+    onTransitModeToggle: (LegType) -> Unit = {},
+    appSkin: String = "MODERN"
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var filterOnlySelected by remember { mutableStateOf(false) }
+    var isOptimizing by remember { mutableStateOf(false) }
+    var isSearchPanelExpanded by remember { mutableStateOf(false) }
+    var isRouteSettingsExpanded by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    val selectedCount = spots.count { it.isSelected }
+    var isBannerDismissed by remember(selectedCount) { mutableStateOf(false) }
 
     val translatedSpots = remember(spots, isEnglish) {
         spots.map { it.translate(isEnglish) }
@@ -1539,152 +2077,600 @@ fun SpotsChecklistTab(
         matchesSearch && matchesSelected
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    var showOptimizationDialog by remember { mutableStateOf(false) }
+
+    if (showOptimizationDialog) {
+        AlertDialog(
+            onDismissRequest = { showOptimizationDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFBBF24), modifier = Modifier.size(20.dp))
+                    Text(
+                        text = if (isEnglish) "Route Optimization AI" else "Optimizare Inteligentă Rută",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            text = {
+                Text(
+                    text = if (isEnglish) {
+                        "Our algorithm automatically re-orders all selected sights starting from your START point based on their geographic distance (TSP nearest-neighbor heuristic). It also automatically determines whether walking or using the transit network (bus/metro) is more efficient for each leg, minimizing travel time and transit fare for you!"
+                    } else {
+                        "Algoritmul reordonează automat toate atracțiile selectate pornind de la punctul tău de START în funcție de distanța lor geografică (rezolvarea problemei comis-voiajorului - TSP). De asemenea, calculează automat dacă mersul pe jos sau utilizarea rețelei de tranzit este mai eficientă pentru fiecare segment! Totul pentru a-ți minimiza timpul de deplasare și cheltuielile!"
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showOptimizationDialog = false }) {
+                    Text(if (isEnglish) "Got it" else "Am înțeles")
+                }
+            },
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = if (isEnglish) "Available Spots in $city" else "Puncte Disponibile în $city",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (isEnglish) "Sights in $city" else "Atracții în $city",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = if (isEnglish) {
+                        "$selectedCount selected"
+                    } else {
+                        "$selectedCount selectate"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                val selectedCount = spots.count { it.isSelected }
-                if (selectedCount > 0) {
-                    TextButton(
-                        onClick = onDeselectAll,
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.testTag("deselect_all_spots_btn")
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(if (isEnglish) "Deselect All" else "Deselectează tot", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Small circular toggle button to show/expand route optimization & config
+                FilledIconButton(
+                    onClick = { isRouteSettingsExpanded = !isRouteSettingsExpanded },
+                    modifier = Modifier.size(36.dp).testTag("toggle_route_settings_panel_btn"),
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = if (isRouteSettingsExpanded) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = if (isRouteSettingsExpanded) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                ) {
+                    Icon(
+                        imageVector = if (isRouteSettingsExpanded) Icons.Default.Close else Icons.Default.Settings,
+                        contentDescription = if (isEnglish) "Route Options" else "Opțiuni Traseu",
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
 
-                val customCount = spots.count { it.isCustom }
-                if (customCount > 0) {
-                    TextButton(
-                        onClick = onClearCustom,
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(if (isEnglish) "Delete custom" else "Șterge noi", fontSize = 11.sp)
-                    }
+                // Small circular toggle button to show/expand search functionality and help algorithms
+                FilledIconButton(
+                    onClick = { isSearchPanelExpanded = !isSearchPanelExpanded },
+                    modifier = Modifier.size(36.dp).testTag("toggle_search_panel_btn"),
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = if (isSearchPanelExpanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = if (isSearchPanelExpanded) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                ) {
+                    Icon(
+                        imageVector = if (isSearchPanelExpanded) Icons.Default.Close else Icons.Default.Search,
+                        contentDescription = if (isEnglish) "Search and filters" else "Caută și filtre",
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
         }
 
-        // Search & Filter bar row
-        Row(
+        // Expanded Search & Filter panel, Route Settings Panel, and Utility buttons are now placed directly
+        // inside the LazyColumn to prevent nested scroll conflicts and ensure infinite smooth scrolling on all device sizes.
+        LazyColumn(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .weight(1f)
+                .padding(horizontal = 8.dp)
+                .testTag("spots_checklist_lazy_column"),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(bottom = 100.dp)
         ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text(if (isEnglish) "Search attractions..." else "Caută atracții...", fontSize = 12.sp) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Clear, contentDescription = if (isEnglish) "Clear" else "Șterge", modifier = Modifier.size(16.dp))
+            // 1. Search Panel (If Expanded)
+            if (isSearchPanelExpanded) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .run {
+                                if (appSkin == "VINTAGE_RPG") {
+                                    this.border(
+                                        width = 2.dp,
+                                        brush = Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))),
+                                        shape = RoundedCornerShape(16.dp)
+                                    )
+                                } else this
+                            },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF261910) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Search text field inside the expanded card
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                placeholder = { Text(if (isEnglish) "Search attractions..." else "Caută atracții...", fontSize = 12.sp) },
+                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                trailingIcon = {
+                                    if (searchQuery.isNotEmpty()) {
+                                        IconButton(onClick = { searchQuery = "" }) {
+                                            Icon(Icons.Default.Clear, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("attr_search_tf"),
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.20f),
+                                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                    unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                                ),
+                                shape = RoundedCornerShape(24.dp),
+                                textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
+                            )
+
+                            // Filter chips row inside the expanded card
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // A. "Doar selectate" (Filter Selected) Chip
+                                FilterChip(
+                                    selected = filterOnlySelected,
+                                    onClick = { filterOnlySelected = !filterOnlySelected },
+                                    label = { 
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            if (filterOnlySelected) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check, 
+                                                    contentDescription = null, 
+                                                    modifier = Modifier.size(14.dp), 
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                            Text(if (isEnglish) "Selected Only" else "Doar selectate", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    },
+                                    modifier = Modifier.height(32.dp).testTag("filter_selected_chip"),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                        selectedLabelColor = MaterialTheme.colorScheme.primary
+                                    )
+                                )
+
+                                // B. "Info Algoritm" Chip
+                                SuggestionChip(
+                                    onClick = { showOptimizationDialog = true },
+                                    label = { 
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Info, 
+                                                contentDescription = null, 
+                                                modifier = Modifier.size(14.dp),
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                            Text(if (isEnglish) "Info Alg" else "Info Algoritm", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    },
+                                    modifier = Modifier.height(32.dp),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = SuggestionChipDefaults.suggestionChipColors(
+                                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
+                                        labelColor = MaterialTheme.colorScheme.primary
+                                    ),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                                )
+                            }
                         }
                     }
-                },
-                modifier = Modifier
-                    .weight(1f)
-                    .height(48.dp)
-                    .testTag("attr_search_tf"),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                ),
-                shape = RoundedCornerShape(24.dp)
-            )
+                }
+            }
 
-            FilterChip(
-                selected = filterOnlySelected,
-                onClick = { filterOnlySelected = !filterOnlySelected },
-                label = { Text(if (isEnglish) "Selected only" else "Doar selectate", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
-                modifier = Modifier.height(34.dp).testTag("filter_selected_chip"),
-                shape = RoundedCornerShape(16.dp),
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                    selectedLabelColor = MaterialTheme.colorScheme.primary
-                )
-            )
-        }
-
-        if (filteredSpots.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+            // 2. Route Settings Panel (If Expanded)
+            if (isRouteSettingsExpanded) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .run {
+                                if (appSkin == "VINTAGE_RPG") {
+                                    this.border(
+                                        width = 2.dp,
+                                        brush = Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))),
+                                        shape = RoundedCornerShape(16.dp)
+                                    )
+                                } else this
+                            },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF261910) else MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Text(
-                            text = if (isEnglish) "No sights found" else "Nicio atracție găsită",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = if (isEnglish) "Try modifying the search text or define a custom location by clicking directly on the map above!" else "Încearcă să modifici textul de căutare sau definește un punct personalizat atingând direct pe harta de mai sus!",
-                            style = MaterialTheme.typography.bodySmall,
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = if (isEnglish) "Route Preference & Modes" else "Configurare Traseu & Optimizare",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            // Preference Section
+                            Text(
+                                text = if (isEnglish) "Routing Priority" else "Criteriu de Optimizare",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            
+                            val preferences = listOf(
+                                "DEFAULT" to (if (isEnglish) "Default" else "Implicit/Echilibrat"),
+                                "LESS_WALKING" to (if (isEnglish) "Less Walking" else "Mai puțin pe jos"),
+                                "FASTER" to (if (isEnglish) "Faster" else "Cel mai rapid"),
+                                "CHEAPER" to (if (isEnglish) "Cheaper" else "Cel mai ieftin"),
+                                "MORE_TRANSFERS" to (if (isEnglish) "More Transfers" else "Cu mai multe schimburi")
+                            )
+                            
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                preferences.forEach { (prefKey, label) ->
+                                    val isSelected = routingPreference == prefKey
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = { onPrefChange(prefKey) },
+                                        label = { Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.height(28.dp).testTag("routing_pref_${prefKey}")
+                                    )
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            // Allowed Transit Modes Section
+                            Text(
+                                text = if (isEnglish) "Preferred Transportation Modes" else "Mijloace de Transport Permise",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                            Text(
+                                text = if (isEnglish) "Excluding a mode automatically recalculates alternatives ('remove methods')" else "Dezactivarea calculează automat rute alternative și elimină metode",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+                            
+                            val transitModes = listOf(
+                                Triple(LegType.WALK, "🚶 Pe jos", "Walk"),
+                                Triple(LegType.BUS, "🚌 Autobuz", "Bus"),
+                                Triple(LegType.METRO, "🚇 Metrou", "Metro"),
+                                Triple(LegType.TROLLEY, "🚎 Troleibuz", "Trolley"),
+                                Triple(LegType.TRAIN, "🚆 Tren", "Train"),
+                                Triple(LegType.TAXI, "🚖 Taxi/Uber", "Taxi/Uber")
+                            )
+                            
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    transitModes.take(3).forEach { (mode, nameRo, nameEn) ->
+                                        val isEnabled = enabledTransitModes.contains(mode)
+                                        FilterChip(
+                                            selected = isEnabled,
+                                            onClick = { onTransitModeToggle(mode) },
+                                            leadingIcon = {
+                                                if (isEnabled) {
+                                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(10.dp))
+                                                }
+                                            },
+                                            label = { Text(if (isEnglish) nameEn else nameRo, fontSize = 9.sp, fontWeight = FontWeight.SemiBold) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f),
+                                                selectedLabelColor = MaterialTheme.colorScheme.secondary,
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f),
+                                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                            ),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.weight(1f).height(28.dp).testTag("transit_mode_${mode.name}")
+                                        )
+                                    }
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    transitModes.drop(3).forEach { (mode, nameRo, nameEn) ->
+                                        val isEnabled = enabledTransitModes.contains(mode)
+                                        FilterChip(
+                                            selected = isEnabled,
+                                            onClick = { onTransitModeToggle(mode) },
+                                            leadingIcon = {
+                                                if (isEnabled) {
+                                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(10.dp))
+                                                }
+                                            },
+                                            label = { Text(if (isEnglish) nameEn else nameRo, fontSize = 9.sp, fontWeight = FontWeight.SemiBold) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f),
+                                                selectedLabelColor = MaterialTheme.colorScheme.secondary,
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f),
+                                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                            ),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.weight(1f).height(28.dp).testTag("transit_mode_${mode.name}")
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
-            ) {
+
+            // 3. Always-Visible action and utility chips (Deselect, Optimize, Delete Custom)
+            val customCount = spots.count { it.isCustom }
+            if (selectedCount > 0 || customCount > 0) {
                 item {
-                    if (weather != null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 1. "Optimizează" (Route Optimization Helper) Card Button
+                        if (selectedCount > 0) {
+                            val premiumGreen = Color(0xFF10B981)
+                            SuggestionChip(
+                                onClick = {
+                                    scope.launch {
+                                        isOptimizing = true
+                                        kotlinx.coroutines.delay(800)
+                                        isOptimizing = false
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            if (isEnglish) "Route successfully optimized!" else "Traseul a fost optimizat cu succes!",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                },
+                                label = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        if (isOptimizing) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(12.dp),
+                                                color = Color.White,
+                                                strokeWidth = 1.5.dp
+                                            )
+                                        } else {
+                                            Text("⚡", fontSize = 11.sp)
+                                        }
+                                        Text(
+                                            text = if (isOptimizing) {
+                                                (if (isEnglish) "Optimizing..." else "Se optimizează...")
+                                            } else {
+                                                (if (isEnglish) "Optimize Route" else "Optimizează Traseu")
+                                            },
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Color.White
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.height(34.dp).testTag("optimize_route_trigger_btn"),
+                                shape = RoundedCornerShape(17.dp),
+                                colors = SuggestionChipDefaults.suggestionChipColors(
+                                    containerColor = premiumGreen,
+                                    labelColor = Color.White
+                                ),
+                                border = BorderStroke(1.dp, premiumGreen.copy(alpha = 0.8f))
+                            )
+                        }
+
+                        // 2. "Deselectează tot" Action Chip
+                        if (selectedCount > 0) {
+                            SuggestionChip(
+                                onClick = onDeselectAll,
+                                label = { 
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh, 
+                                            contentDescription = null, 
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(if (isEnglish) "Deselect All" else "Deselectează tot", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                },
+                                modifier = Modifier.height(34.dp).testTag("deselect_all_spots_btn"),
+                                shape = RoundedCornerShape(17.dp),
+                                colors = SuggestionChipDefaults.suggestionChipColors(
+                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
+                                    labelColor = MaterialTheme.colorScheme.primary
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                            )
+                        }
+
+                        // 3. "Șterge noi" Action Chip
+                        if (customCount > 0) {
+                            SuggestionChip(
+                                onClick = onClearCustom,
+                                label = { 
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete, 
+                                            contentDescription = null, 
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                        Text(if (isEnglish) "Delete Custom" else "Șterge noi", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                },
+                                modifier = Modifier.height(34.dp),
+                                shape = RoundedCornerShape(17.dp),
+                                colors = SuggestionChipDefaults.suggestionChipColors(
+                                    containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.05f),
+                                    labelColor = MaterialTheme.colorScheme.error
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f))
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 4. Empty Result Banner or Weather card with List elements inside the LazyColumn
+            if (filteredSpots.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF261910) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+                            ),
+                            border = if (appSkin == "VINTAGE_RPG") {
+                                BorderStroke(1.8.dp, Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))))
+                            } else null,
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Text(
+                                    text = if (isEnglish) "No sights found" else "Nicio atracție găsită",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = if (isEnglish) "Try modifying the search text or define a custom location by clicking directly on the map above!" else "Încearcă să modifici textul de căutare sau definește un punct personalizat atingând direct pe harta de mai sus!",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    textAlign = TextAlign.Center,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                // 5. Weather card (If visible)
+                if (weather != null) {
+                    item {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 8.dp, vertical = 4.dp),
                             shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF261910) else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+                            ),
+                            border = if (appSkin == "VINTAGE_RPG") {
+                                BorderStroke(1.8.dp, Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))))
+                            } else {
+                                BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+                            }
                         ) {
                             Column(modifier = Modifier.padding(14.dp)) {
                                 Row(
@@ -1834,9 +2820,13 @@ fun SpotsChecklistTab(
                     val isCurrentStart = (translatedCustomStartSpot?.id == spot.id) || 
                         (translatedCustomStartSpot == null && spot.name == TransitNetwork.getStartSpot(city).translate(isEnglish).name)
 
-                    val cardColor = if (spot.isSelected) 
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f) 
-                    else MaterialTheme.colorScheme.surface
+                    val cardColor = if (appSkin == "VINTAGE_RPG") {
+                        if (spot.isSelected) Color(0xFF382317) else Color(0xFF261910)
+                    } else {
+                        if (spot.isSelected) 
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f) 
+                        else MaterialTheme.colorScheme.surface
+                    }
 
                     val borderColor = if (isCurrentStart) {
                         Color(0xFFEC4899)
@@ -1848,7 +2838,17 @@ fun SpotsChecklistTab(
 
                     Card(
                         colors = CardDefaults.cardColors(containerColor = cardColor),
-                        border = BorderStroke(if (isCurrentStart || spot.isSelected) 1.5.dp else 1.dp, borderColor),
+                        border = if (appSkin == "VINTAGE_RPG") {
+                            if (isCurrentStart) {
+                                BorderStroke(2.dp, Brush.verticalGradient(listOf(Color(0xFFEC4899), Color(0xFFF472B6))))
+                            } else if (spot.isSelected) {
+                                BorderStroke(1.8.dp, Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))))
+                            } else {
+                                BorderStroke(1.dp, Color(0xFF5C4033).copy(alpha = 0.5f))
+                            }
+                        } else {
+                            BorderStroke(if (isCurrentStart || spot.isSelected) 1.5.dp else 1.dp, borderColor)
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 8.dp)
@@ -1868,6 +2868,39 @@ fun SpotsChecklistTab(
                                 modifier = Modifier.testTag("checkbox_spot_${spot.id}")
                             )
 
+                            // 🎨 PERSONALIZED MINIATURE THUMBNAIL FOR ATTRACTION
+                            val emoji = getSpotCategoryEmoji(spot.name)
+                            val gradientColors = when (emoji) {
+                                "🌳" -> listOf(Color(0xFF065F46), Color(0xFF047857), Color(0xFF10B981)) // Forest/Teal Gradients
+                                "🏛️" -> listOf(Color(0xFF1E1E2C), Color(0xFF312E81), Color(0xFF4F46E5)) // Deep Indigo/Museum Gradients
+                                "⛪" -> listOf(Color(0xFF130F40), Color(0xFF2C3A47), Color(0xFF1B1464)) // Sacred Cosmic Dark Blue
+                                "🏰" -> listOf(Color(0xFF78350F), Color(0xFFD97706), Color(0xFFFBBF24)) // Golden Royal Amber
+                                "🎭" -> listOf(Color(0xFF701A75), Color(0xFF9D174D), Color(0xFFF43F5E)) // Creative Rose Magenta
+                                "🔭" -> listOf(Color(0xFF0F172A), Color(0xFF1E293B), Color(0xFF581C87)) // Deep Observatory Purple
+                                "🏟️" -> listOf(Color(0xFF111827), Color(0xFF1E3A8A), Color(0xFF3B82F6)) // Sport Blue
+                                "🌴" -> listOf(Color(0xFF065F46), Color(0xFF0D9488), Color(0xFF2DD4BF)) // Spa/Aquatic Turquoise
+                                "🪦" -> listOf(Color(0xFF1E293B), Color(0xFF334155), Color(0xFF64748B)) // Muted Memorial Slate Gray
+                                "📖" -> listOf(Color(0xFF3B1F10), Color(0xFF6B4226), Color(0xFFB07D62)) // Leather Book Amber
+                                "🏮" -> listOf(Color(0xFF5B1616), Color(0xFF881337), Color(0xFFE11D48)) // Vintage Lantern Rose
+                                else -> listOf(Color(0xFF1E293B), Color(0xFF475569), Color(0xFF94A3B8)) // Modern Silver Gray
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .background(
+                                        brush = androidx.compose.ui.graphics.Brush.linearGradient(gradientColors),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(8.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = emoji,
+                                    fontSize = 18.sp
+                                )
+                            }
+
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -1875,7 +2908,7 @@ fun SpotsChecklistTab(
                                     modifier = Modifier.wrapContentHeight()
                                 ) {
                                     Text(
-                                        text = spot.name,
+                                        text = translateSpotName(spot.name, isEnglish),
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp,
                                         color = if (spot.isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
@@ -1962,6 +2995,8 @@ fun SpotsChecklistTab(
             }
         }
     }
+
+    }
 }
 
 @Composable
@@ -1973,7 +3008,11 @@ fun TimelineTab(
     isSimulatingNavigation: Boolean = false,
     onStartSimulationClick: () -> Unit = {},
     onStopSimulationClick: () -> Unit = {},
-    isEnglish: Boolean = false
+    isEnglish: Boolean = false,
+    activeLegIndex: Int = 0,
+    liveTransitVehicles: List<com.example.domain.LiveTransitVehicle> = emptyList(),
+    onVehicleClick: ((com.example.domain.LiveTransitVehicle) -> Unit)? = null,
+    appSkin: String = "MODERN"
 ) {
     // Dynamic timetable hour calculation
     val startMin = 540 // 09:00 AM
@@ -2008,7 +3047,13 @@ fun TimelineTab(
     ) {
         // ALWAYS show live operator transit banner at the top
         item {
-            LiveOperatorApiPanel(city = city, isEnglish = isEnglish)
+            LiveOperatorApiPanel(
+                city = city,
+                isEnglish = isEnglish,
+                liveVehiclesPassed = liveTransitVehicles,
+                onVehicleClick = onVehicleClick,
+                appSkin = appSkin
+            )
         }
 
         if (journey != null && journey.orderedSpots.isNotEmpty()) {
@@ -2016,10 +3061,19 @@ fun TimelineTab(
                 Card(
                     modifier = Modifier.fillMaxWidth().testTag("simulation_trigger_card"),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (isSimulatingNavigation) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f) 
-                        else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.15f)
+                        containerColor = if (appSkin == "VINTAGE_RPG") {
+                            if (isSimulatingNavigation) Color(0xFF1C1A14) else Color(0xFF261910)
+                        } else {
+                            if (isSimulatingNavigation) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f) 
+                            else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.15f)
+                        }
                     ),
-                    border = BorderStroke(1.5.dp, if (isSimulatingNavigation) Color(0xFF10B981) else MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                    border = if (appSkin == "VINTAGE_RPG") {
+                        if (isSimulatingNavigation) BorderStroke(2.dp, Color(0xFF10B981))
+                        else BorderStroke(1.8.dp, Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))))
+                    } else {
+                        BorderStroke(1.5.dp, if (isSimulatingNavigation) Color(0xFF10B981) else MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                    },
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Row(
@@ -2093,7 +3147,12 @@ fun TimelineTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF261910) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
+                    ),
+                    border = if (appSkin == "VINTAGE_RPG") {
+                        BorderStroke(1.5.dp, Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))))
+                    } else null,
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Column(
@@ -2126,8 +3185,10 @@ fun TimelineTab(
             // Chronological Schedule: START PLACE NODE
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFEC4899).copy(alpha = 0.08f)),
-                    border = BorderStroke(1.dp, Color(0xFFEC4899).copy(alpha = 0.4f)),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF2E1B26) else Color(0xFFEC4899).copy(alpha = 0.08f)
+                    ),
+                    border = BorderStroke(1.5.dp, Color(0xFFEC4899).copy(alpha = if (appSkin == "VINTAGE_RPG") 0.8f else 0.4f)),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Row(
@@ -2191,6 +3252,9 @@ fun TimelineTab(
                 val arrivalStr = arrivalDeparture?.let { formatMinutesToTime(it.first) } ?: "09:00"
                 val departureStr = arrivalDeparture?.let { formatMinutesToTime(it.second) } ?: "10:00"
 
+                val isActiveStep = isSimulatingNavigation && index == activeLegIndex
+                val isDestinationTargetNext = isSimulatingNavigation && index == activeLegIndex
+
                 val legColor = if (leg.type == LegType.BUS) {
                     leg.busColorHex?.let {
                         try {
@@ -2217,31 +3281,117 @@ fun TimelineTab(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        // Vertical visual rail indicator
-                        Box(
+                        // Upgraded High-visibility Stepper Timeline Rail
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
                             modifier = Modifier
-                                .width(8.dp)
+                                .width(28.dp)
                                 .fillMaxHeight()
-                                .background(
-                                    color = legColor.copy(alpha = 0.85f),
-                                    shape = RoundedCornerShape(4.dp)
-                                )
-                        )
+                        ) {
+                            // Top connector dot
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .background(if (isActiveStep) Color(0xFF10B981) else legColor, CircleShape)
+                            )
+                            // Rail line segment top
+                            Box(
+                                modifier = Modifier
+                                    .width(if (leg.type == LegType.BUS) 4.dp else 2.dp)
+                                    .weight(1f)
+                                    .background(
+                                        color = (if (isActiveStep) Color(0xFF10B981) else legColor).copy(alpha = 0.6f),
+                                        shape = RoundedCornerShape(2.dp)
+                                    )
+                            )
+                            // Mode identifier emoji
+                            Text(
+                                text = if (leg.type == LegType.BUS) "🚌" else "🚶",
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(vertical = 2.dp)
+                            )
+                            // Rail line segment bottom
+                            Box(
+                                modifier = Modifier
+                                    .width(if (leg.type == LegType.BUS) 4.dp else 2.dp)
+                                    .weight(1f)
+                                    .background(
+                                        color = (if (isActiveStep) Color(0xFF10B981) else legColor).copy(alpha = 0.6f),
+                                        shape = RoundedCornerShape(2.dp)
+                                    )
+                            )
+                            // Bottom connector dot
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .background(if (isActiveStep) Color(0xFF10B981) else legColor, CircleShape)
+                            )
+                        }
 
                         // Details block
                         Card(
                             modifier = Modifier.weight(1f),
                             colors = CardDefaults.cardColors(
-                                containerColor = if (leg.type == LegType.BUS) 
-                                    legColor.copy(alpha = 0.08f) 
-                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
+                                containerColor = if (appSkin == "VINTAGE_RPG") {
+                                    if (isActiveStep) Color(0xFF1E2822) else Color(0xFF261910)
+                                } else {
+                                    if (isActiveStep) {
+                                        Color(0xFF10B981).copy(alpha = 0.08f)
+                                    } else if (leg.type == LegType.BUS) {
+                                        legColor.copy(alpha = 0.08f) 
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
+                                    }
+                                }
                             ),
-                            border = BorderStroke(
-                                width = 1.dp,
-                                color = if (leg.type == LegType.BUS) legColor.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                            )
+                            border = if (appSkin == "VINTAGE_RPG") {
+                                if (isActiveStep) {
+                                    BorderStroke(2.dp, Color(0xFF10B981))
+                                } else if (leg.type == LegType.BUS) {
+                                    BorderStroke(1.5.dp, legColor)
+                                } else {
+                                    BorderStroke(1.2.dp, Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))))
+                                }
+                            } else {
+                                BorderStroke(
+                                    width = if (isActiveStep) 2.dp else 1.dp,
+                                    color = if (isActiveStep) {
+                                        Color(0xFF10B981)
+                                    } else if (leg.type == LegType.BUS) {
+                                        legColor.copy(alpha = 0.35f) 
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                    }
+                                )
+                            },
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                if (isActiveStep) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        modifier = Modifier
+                                            .background(Color(0xFF10B981).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .background(Color(0xFF10B981), CircleShape)
+                                        )
+                                        Text(
+                                            text = if (isEnglish) "REAL-TIME NAVIGATION ACTIVE" else "NAVIGAȚIE ÎN TIMP REAL",
+                                            fontSize = 8.5.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color(0xFF10B981),
+                                            letterSpacing = 0.5.sp
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                }
+
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2254,26 +3404,26 @@ fun TimelineTab(
                                         Icon(
                                             imageVector = if (leg.type == LegType.BUS) Icons.Default.LocationOn else Icons.AutoMirrored.Filled.ArrowForward,
                                             contentDescription = null,
-                                            tint = legColor,
+                                            tint = if (isActiveStep) Color(0xFF10B981) else legColor,
                                             modifier = Modifier.size(16.dp)
                                         )
                                         Text(
                                             text = if (leg.type == LegType.BUS) (leg.busLineName ?: (if (isEnglish) "Bus" else "Autobuz")) else (if (isEnglish) "Walking" else "Plimbare pe Jos"),
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 12.sp,
-                                            color = if (leg.type == LegType.BUS) legColor else MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = if (isActiveStep) Color(0xFF10B981) else if (leg.type == LegType.BUS) legColor else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                     Box(
                                         modifier = Modifier
-                                            .background(legColor.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                                            .background((if (isActiveStep) Color(0xFF10B981) else legColor).copy(alpha = 0.15f), RoundedCornerShape(12.dp))
                                             .padding(horizontal = 6.dp, vertical = 2.dp)
                                     ) {
                                         Text(
                                             text = "${leg.durationMinutes} min",
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (leg.type == LegType.BUS) legColor else MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = if (isActiveStep) Color(0xFF10B981) else if (leg.type == LegType.BUS) legColor else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
@@ -2328,8 +3478,30 @@ fun TimelineTab(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(start = 12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isDestinationTargetNext) {
+                                    if (appSkin == "VINTAGE_RPG") Color(0xFF1E2822) else Color(0xFF10B981).copy(alpha = 0.05f)
+                                } else {
+                                    if (appSkin == "VINTAGE_RPG") Color(0xFF261910) else MaterialTheme.colorScheme.surface
+                                }
+                            ),
+                            border = if (appSkin == "VINTAGE_RPG") {
+                                if (isDestinationTargetNext) {
+                                    BorderStroke(2.dp, Color(0xFF10B981))
+                                } else {
+                                    BorderStroke(1.5.dp, Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))))
+                                }
+                            } else {
+                                BorderStroke(
+                                    width = if (isDestinationTargetNext) 2.dp else 1.dp,
+                                    color = if (isDestinationTargetNext) {
+                                        Color(0xFF10B981)
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                                    }
+                                )
+                            },
+                            shape = RoundedCornerShape(12.dp)
                         ) {
                             Row(
                                 modifier = Modifier
@@ -2343,26 +3515,82 @@ fun TimelineTab(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(28.dp)
-                                            .background(MaterialTheme.colorScheme.primary, CircleShape),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = (destinationIndex + 1).toString(),
-                                            color = MaterialTheme.colorScheme.onPrimary,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.ExtraBold
-                                        )
+                                    // 🎨 THEME-COLORED PERSONALIZED MINIATURE THUMBNAIL
+                                    val emoji = getSpotCategoryEmoji(spot.name)
+                                    val gradientColors = when (emoji) {
+                                        "🌳" -> listOf(Color(0xFF065F46), Color(0xFF047857), Color(0xFF10B981))
+                                        "🏛️" -> listOf(Color(0xFF1E1E2C), Color(0xFF312E81), Color(0xFF4F46E5))
+                                        "⛪" -> listOf(Color(0xFF130F40), Color(0xFF2C3A47), Color(0xFF1B1464))
+                                        "🏰" -> listOf(Color(0xFF78350F), Color(0xFFD97706), Color(0xFFFBBF24))
+                                        "🎭" -> listOf(Color(0xFF701A75), Color(0xFF9D174D), Color(0xFFF43F5E))
+                                        "🔭" -> listOf(Color(0xFF0F172A), Color(0xFF1E293B), Color(0xFF581C87))
+                                        "🏟️" -> listOf(Color(0xFF111827), Color(0xFF1E3A8A), Color(0xFF3B82F6))
+                                        "🌴" -> listOf(Color(0xFF065F46), Color(0xFF0D9488), Color(0xFF2DD4BF))
+                                        "🪦" -> listOf(Color(0xFF1E293B), Color(0xFF334155), Color(0xFF64748B))
+                                        "📖" -> listOf(Color(0xFF3B1F10), Color(0xFF6B4226), Color(0xFFB07D62))
+                                        "🏮" -> listOf(Color(0xFF5B1616), Color(0xFF881337), Color(0xFFE11D48))
+                                        else -> listOf(Color(0xFF1E293B), Color(0xFF475569), Color(0xFF94A3B8))
                                     }
-                                    Column {
+
+                                    Box(
+                                        modifier = Modifier.size(46.dp)
+                                    ) {
+                                        // Main miniature thumbnail box
+                                        Box(
+                                            modifier = Modifier
+                                                .size(42.dp)
+                                                .align(Alignment.BottomStart)
+                                                .background(
+                                                    brush = androidx.compose.ui.graphics.Brush.linearGradient(gradientColors),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                )
+                                                .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(8.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = emoji,
+                                                fontSize = 18.sp
+                                            )
+                                        }
+
+                                        // Sequence badge overlay (Step Number)
+                                        Box(
+                                            modifier = Modifier
+                                                .size(18.dp)
+                                                .align(Alignment.TopEnd)
+                                                .background(
+                                                    if (isDestinationTargetNext) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
+                                                    CircleShape
+                                                )
+                                                .border(1.dp, Color(0xFF1E293B), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = (destinationIndex + 1).toString(),
+                                                color = Color.White,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Black
+                                            )
+                                        }
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = spot.name,
+                                            text = translateSpotName(spot.name, isEnglish),
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 13.sp,
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
+                                        // High-fidelity description snippet for tourist spots
+                                        if (spot.description.isNotEmpty()) {
+                                            Text(
+                                                text = spot.description,
+                                                fontSize = 10.5.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
+                                            )
+                                        }
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -2382,18 +3610,20 @@ fun TimelineTab(
                                     }
                                 }
                                 
+                                Spacer(modifier = Modifier.width(6.dp))
+
                                 // Visual Hour Interval Tag
                                 Box(
                                     modifier = Modifier
-                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
-                                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                        .background((if (isDestinationTargetNext) Color(0xFF10B981) else MaterialTheme.colorScheme.primary).copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                        .border(1.dp, (if (isDestinationTargetNext) Color(0xFF10B981) else MaterialTheme.colorScheme.primary).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
                                         .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
                                     Text(
                                         text = "$arrivalStr - $departureStr",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.primary
+                                        color = if (isDestinationTargetNext) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }
@@ -2409,7 +3639,10 @@ fun TimelineTab(
 fun LiveOperatorApiPanel(
     city: String,
     modifier: Modifier = Modifier,
-    isEnglish: Boolean = false
+    isEnglish: Boolean = false,
+    liveVehiclesPassed: List<com.example.domain.LiveTransitVehicle> = emptyList(),
+    onVehicleClick: ((com.example.domain.LiveTransitVehicle) -> Unit)? = null,
+    appSkin: String = "MODERN"
 ) {
     val context = LocalContext.current
     val op = remember(city) { TransportApiEngine.getOperatorForCity(city) }
@@ -2430,8 +3663,9 @@ fun LiveOperatorApiPanel(
     var ticketTimeLeft by remember { mutableStateOf(smsConfig.validityMinutes * 60) } // in seconds
     var showAlertsDesc by remember { mutableStateOf(false) }
     
-    // Simulated live vehicles data
-    var liveVehicles by remember(city) { mutableStateOf(TransportApiEngine.simulateLiveVehicles(city)) }
+    // Fallback to local simulation if no vehicles passed from the main runner
+    var liveVehiclesLocal by remember(city) { mutableStateOf(TransportApiEngine.simulateLiveVehicles(city)) }
+    val liveVehicles = if (liveVehiclesPassed.isNotEmpty()) liveVehiclesPassed else liveVehiclesLocal
     
     // Timer for bilet electronic countdown
     LaunchedEffect(hasActiveTicket) {
@@ -2445,19 +3679,27 @@ fun LiveOperatorApiPanel(
         }
     }
     
-    // Timer for refreshing live vehicle speeds/occupancy/delays slightly
+    // Timer for refreshing local live vehicle speeds/occupancy/delays if no global active feed
     LaunchedEffect(city) {
         while(true) {
             kotlinx.coroutines.delay(10000) // update every 10s
-            liveVehicles = TransportApiEngine.simulateLiveVehicles(city)
+            if (liveVehiclesPassed.isEmpty()) {
+                liveVehiclesLocal = TransportApiEngine.simulateLiveVehicles(city)
+            }
         }
     }
     
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)), // Deep Slate background
-        border = BorderStroke(1.dp, Color(0xFF334155))
+        colors = CardDefaults.cardColors(
+            containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF261910) else Color(0xFF0F172A)
+        ),
+        border = if (appSkin == "VINTAGE_RPG") {
+            BorderStroke(1.8.dp, Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))))
+        } else {
+            BorderStroke(1.dp, Color(0xFF334155))
+        }
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             // Header
@@ -2481,6 +3723,7 @@ fun LiveOperatorApiPanel(
                                 TransportOperator.STB -> "🚋"
                                 TransportOperator.CTP -> "🚍"
                                 TransportOperator.RATBV -> "🚌"
+                                TransportOperator.ELIADO -> "🚎"
                             },
                             fontSize = 18.sp
                         )
@@ -2626,10 +3869,20 @@ fun LiveOperatorApiPanel(
                 items(liveVehicles.size) { idx ->
                     val v = liveVehicles[idx]
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                        border = BorderStroke(1.dp, Color(0xFF475569)),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF382317) else Color(0xFF1E293B)
+                        ),
+                        border = if (appSkin == "VINTAGE_RPG") {
+                            BorderStroke(1.2.dp, Color(0xFFC5A059).copy(alpha = 0.7f))
+                        } else {
+                            BorderStroke(1.dp, Color(0xFF475569))
+                        },
                         shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.width(180.dp)
+                        modifier = Modifier
+                            .width(180.dp)
+                            .clickable(enabled = onVehicleClick != null) {
+                                onVehicleClick?.invoke(v)
+                            }
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
                             Row(
@@ -2688,6 +3941,14 @@ fun LiveOperatorApiPanel(
                                     )
                                 }
                             }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = if (isEnglish) "📍 Tap to locate on map" else "📍 Apasă pt. localizare",
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFF43F5E),
+                                modifier = Modifier.align(Alignment.CenterHorizontally)
+                            )
                         }
                     }
                 }
@@ -2725,8 +3986,14 @@ fun LiveOperatorApiPanel(
                 val countdownFormatted = String.format("%02d:%02d", minsLeft, secsLeft)
                 
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0284C7).copy(alpha = 0.12f)),
-                    border = BorderStroke(1.dp, Color(0xFF0284C7)),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF1E2822) else Color(0xFF0284C7).copy(alpha = 0.12f)
+                    ),
+                    border = if (appSkin == "VINTAGE_RPG") {
+                        BorderStroke(1.8.dp, Color(0xFF10B981))
+                    } else {
+                        BorderStroke(1.dp, Color(0xFF0284C7))
+                    },
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -2855,8 +4122,21 @@ fun AiGuideTab(
     recommendationText: String,
     isLoading: Boolean,
     onCallAi: () -> Unit,
-    isEnglish: Boolean = false
+    isEnglish: Boolean = false,
+    aiProvider: String = "GEMINI",
+    appSkin: String = "MODERN"
 ) {
+    LaunchedEffect(recommendationText) {
+        if (recommendationText.isEmpty() && !isLoading) {
+            onCallAi()
+        }
+    }
+    val providerName = when (aiProvider) {
+        "OPENAI" -> "OpenAI"
+        "OPENROUTER" -> "OpenRouter"
+        else -> "Gemini"
+    }
+
     if (isLoading) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -2866,7 +4146,7 @@ fun AiGuideTab(
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = if (isEnglish) "Gemini is compiling optimized response..." else "Gemini scrie răspunsul optimizat...",
+                    text = if (isEnglish) "$providerName is compiling optimized response..." else "$providerName scrie răspunsul optimizat...",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2893,13 +4173,13 @@ fun AiGuideTab(
                     tint = Color(0xFFEAB308)
                 )
                 Text(
-                    text = if (isEnglish) "Gemini AI Tour Guide" else "Ghid Turistic AI Gemini",
+                    text = if (isEnglish) "$providerName AI Tour Guide" else "Ghid Turistic AI $providerName",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = if (isEnglish) "Let Gemini AI analyze your selected spots and compile a full-day optimized schedule with estimated travel times, cost approximations, transit recommendations and local tips!"
-                           else "Lăsați AI-ul Gemini să analizeze punctele tale alese și să compileze o descriere a întregii zile cu ore estimate, recomandări de autobuze optime din mers și detalii specifice fiecărui obiectiv!",
+                    text = if (isEnglish) "Let $providerName AI analyze your selected spots and compile a full-day optimized schedule with estimated travel times, cost approximations, transit recommendations and local tips!"
+                           else "Lăsați AI-ul $providerName să analizeze punctele tale alese și să compileze o descriere a întregii zile cu ore estimate, recomandări de autobuze optime din mers și detalii specifice fiecărui obiectiv!",
                     textAlign = TextAlign.Center,
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2912,7 +4192,7 @@ fun AiGuideTab(
                 ) {
                     Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(if (isEnglish) "Generate AI Route with Gemini" else "Generează Traseu AI cu Gemini")
+                    Text(if (isEnglish) "Generate AI Route with $providerName" else "Generează Traseu AI cu $providerName")
                 }
             }
         }
@@ -2959,7 +4239,12 @@ fun AiGuideTab(
 
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF261910) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                ),
+                border = if (appSkin == "VINTAGE_RPG") {
+                    BorderStroke(1.8.dp, Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))))
+                } else null,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -2987,7 +4272,8 @@ fun LiveTestingTab(
     onSaveLog: (String, String, String) -> Unit,
     onDeleteLog: (Long) -> Unit,
     onClearLogs: () -> Unit,
-    isEnglish: Boolean = false
+    isEnglish: Boolean = false,
+    appSkin: String = "MODERN"
 ) {
     var placeNameInput by remember { mutableStateOf("") }
     var noteInput by remember { mutableStateOf("") }
@@ -3010,9 +4296,13 @@ fun LiveTestingTab(
         item {
             Card(
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+                    containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF261910) else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
                 ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+                border = if (appSkin == "VINTAGE_RPG") {
+                    BorderStroke(1.8.dp, Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))))
+                } else {
+                    BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+                },
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -3103,8 +4393,14 @@ fun LiveTestingTab(
         // 2. Logging Interface
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF261910) else MaterialTheme.colorScheme.surface
+                ),
+                border = if (appSkin == "VINTAGE_RPG") {
+                    BorderStroke(1.8.dp, Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))))
+                } else {
+                    BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                },
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -3229,13 +4525,34 @@ fun LiveTestingTab(
                 )
 
                 if (testingLogs.isNotEmpty()) {
-                    TextButton(
-                        onClick = onClearLogs,
-                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFEF4444))
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(12.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(if (isEnglish) "Clear Report" else "Șterge Raport", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        val context = LocalContext.current
+                        TextButton(
+                            onClick = {
+                                val reportText = testingLogs.joinToString("\n\n") { "📍 ${it.placeName}\n👤 ${it.observerName}\n📝 ${it.note}" }
+                                val reportTitle = if (isEnglish) "Field Testing Report for $city:\n\n" else "Raport Testare Teren pentru $city:\n\n"
+                                val shareIntent = android.content.Intent().apply {
+                                    action = android.content.Intent.ACTION_SEND
+                                    putExtra(android.content.Intent.EXTRA_TEXT, reportTitle + reportText)
+                                    type = "text/plain"
+                                }
+                                context.startActivity(android.content.Intent.createChooser(shareIntent, null))
+                            },
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(if (isEnglish) "Share" else "Distribuie", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                        
+                        TextButton(
+                            onClick = onClearLogs,
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFEF4444))
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(if (isEnglish) "Clear" else "Șterge", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -3245,7 +4562,12 @@ fun LiveTestingTab(
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF261910) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)
+                    ),
+                    border = if (appSkin == "VINTAGE_RPG") {
+                        BorderStroke(1.2.dp, Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))))
+                    } else null,
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Box(
@@ -3271,8 +4593,14 @@ fun LiveTestingTab(
                     sdf.format(java.util.Date(log.timestamp))
                 }
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF261910) else MaterialTheme.colorScheme.surface
+                    ),
+                    border = if (appSkin == "VINTAGE_RPG") {
+                        BorderStroke(1.5.dp, Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))))
+                    } else {
+                        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    },
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -3334,6 +4662,7 @@ fun translateCityName(city: String, isEnglish: Boolean): String {
         when (city) {
             "București" -> "Bucharest"
             "Brașov" -> "Brasov"
+            "Câmpina" -> "Campina"
             else -> city
         }
     } else {
@@ -3382,8 +4711,11 @@ fun translateRouteDetailsText(text: String, isEnglish: Boolean): String {
 fun SavedItinerariesTab(
     itineraries: List<SavedItinerary>,
     onDelete: (Long) -> Unit,
-    isEnglish: Boolean = false
+    onClearAll: () -> Unit,
+    isEnglish: Boolean = false,
+    appSkin: String = "MODERN"
 ) {
+    val context = LocalContext.current
     if (itineraries.isEmpty()) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -3407,15 +4739,38 @@ fun SavedItinerariesTab(
         return
     }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
+    var showClearAllDialog by remember { mutableStateOf(false) }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.End
+        ) {
+            TextButton(
+                onClick = { showClearAllDialog = true },
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(if (isEnglish) "Clear All" else "Șterge Toate", fontWeight = FontWeight.Bold)
+            }
+        }
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp)
+                .padding(bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
         items(itineraries) { record ->
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF261910) else MaterialTheme.colorScheme.surface
+                ),
+                border = if (appSkin == "VINTAGE_RPG") {
+                    BorderStroke(1.8.dp, Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45))))
+                } else null,
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -3442,16 +4797,40 @@ fun SavedItinerariesTab(
                             )
                         }
 
-                        IconButton(
-                            onClick = { onDelete(record.id) },
-                            modifier = Modifier.size(36.dp).testTag("delete_saved_itinerary_${record.id}")
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = if (isEnglish) "Delete saved" else "Șterge salvare",
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            IconButton(
+                                onClick = { 
+                                    val translatedDetails = translateRouteDetailsText(record.routeDetails, isEnglish)
+                                    val shareIntent = android.content.Intent().apply {
+                                        action = android.content.Intent.ACTION_SEND
+                                        putExtra(android.content.Intent.EXTRA_TEXT, if (isEnglish) "Here is my itinerary for ${record.city}:\n\n$translatedDetails" else "Aici este itinerarul meu pentru ${record.city}:\n\n$translatedDetails")
+                                        type = "text/plain"
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(shareIntent, null))
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = if (isEnglish) "Share" else "Distribuie",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            
+                            IconButton(
+                                onClick = { onDelete(record.id) },
+                                modifier = Modifier.size(36.dp).testTag("delete_saved_itinerary_${record.id}")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = if (isEnglish) "Delete saved" else "Șterge salvare",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
 
@@ -3467,12 +4846,41 @@ fun SavedItinerariesTab(
             }
         }
     }
+
+    if (showClearAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearAllDialog = false },
+            title = { Text(if (isEnglish) "Clear All Saved Itineraries?" else "Ștergeți Toate Itinerariile Salvate?") },
+            text = { Text(if (isEnglish) "Are you sure you want to delete all saved itineraries? This action cannot be undone." else "Sunteți sigur că doriți să ștergeți toate itinerariile salvate? Această acțiune nu poate fi anulată.") },
+            confirmButton = {
+                Button(
+                    onClick = { 
+                        showClearAllDialog = false
+                        onClearAll() 
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text(if (isEnglish) "Delete" else "Șterge")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearAllDialog = false }) {
+                    Text(if (isEnglish) "Cancel" else "Anulare")
+                }
+            }
+        )
+    }
+
+    // Close the Column
+}
 }
 
 @Composable
 fun SettingsDialog(
     show: Boolean,
     onDismiss: () -> Unit,
+    selectedCity: String,
+    onCityChange: (String) -> Unit,
     isStationsVisible: Boolean,
     onStationsToggle: (Boolean) -> Unit,
     isTransitLinesVisible: Boolean,
@@ -3486,12 +4894,39 @@ fun SettingsDialog(
     isSoundEnabled: Boolean,
     onSoundEnabledToggle: (Boolean) -> Unit,
     isEnglish: Boolean,
-    onLanguageToggle: (Boolean) -> Unit
+    onLanguageToggle: (Boolean) -> Unit,
+    openaiApiKey: String,
+    onOpenaiApiKeyChange: (String) -> Unit,
+    aiProvider: String,
+    onAiProviderChange: (String) -> Unit,
+    openrouterApiKey: String,
+    onOpenrouterApiKeyChange: (String) -> Unit,
+    openrouterModel: String,
+    onOpenrouterModelChange: (String) -> Unit,
+    appSkin: String = "MODERN",
+    onAppSkinChange: (String) -> Unit,
+    onFactoryReset: () -> Unit
 ) {
     if (!show) return
 
+    var showChangelog by remember { mutableStateOf(false) }
+
+    if (showChangelog) {
+        ChangelogDialog(
+            isEnglish = isEnglish,
+            onDismiss = { showChangelog = false }
+        )
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = if (appSkin == "VINTAGE_RPG") {
+            Modifier.border(
+                BorderStroke(2.dp, Brush.verticalGradient(listOf(Color(0xFFD4AF37), Color(0xFF8C6D45)))),
+                shape = RoundedCornerShape(24.dp)
+            )
+        } else Modifier,
+        containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF1C110A) else MaterialTheme.colorScheme.surface,
         title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -3517,6 +4952,79 @@ fun SettingsDialog(
                     .padding(vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // SECTION: ACTIVE CITY SELECTOR
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = if (isEnglish) "Select Active City" else "Selectează Orașul Activ",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val cities = listOf(
+                            Triple("București", "Bucharest", "🚋"),
+                            Triple("Cluj-Napoca", "Cluj-Napoca", "🚍"),
+                            Triple("Brașov", "Brasov", "🏔️"),
+                            Triple("Câmpina", "Campina", "🏰")
+                        )
+                        cities.chunked(2).forEach { rowCities ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                rowCities.forEach { (cityRaw, cityEng, emoji) ->
+                                    val isSelected = selectedCity == cityRaw
+                                    val displayName = if (isEnglish) cityEng else cityRaw
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(44.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(
+                                                if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                            )
+                                            .border(
+                                                1.5.dp,
+                                                if (isSelected) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    Color.Transparent
+                                                },
+                                                RoundedCornerShape(12.dp)
+                                            )
+                                            .clickable { onCityChange(cityRaw) }
+                                            .padding(horizontal = 8.dp),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text(text = emoji, fontSize = 16.sp)
+                                            Text(
+                                                text = displayName,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
                 // SECTION: LANGUAGE SELECTOR
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
@@ -3548,6 +5056,43 @@ fun SettingsDialog(
                             modifier = Modifier.weight(1f).testTag("lang_en_button")
                         ) {
                             Text("English (EN)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                // SECTION: APP SKIN / THEME
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = if (isEnglish) "Application Theme" else "Tematica Aplicației",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { onAppSkinChange("MODERN") },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (appSkin == "MODERN") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (appSkin == "MODERN") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(if (isEnglish) "Modern UI" else "Interfață Modernă", fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                        }
+                        Button(
+                            onClick = { onAppSkinChange("VINTAGE_RPG") },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFFC5A059) else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (appSkin == "VINTAGE_RPG") Color(0xFF1C110A) else MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(if (isEnglish) "Vintage RPG" else "RPG Vintage", fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                         }
                     }
                 }
@@ -3651,13 +5196,16 @@ fun SettingsDialog(
                             contentPadding = PaddingValues(horizontal = 2.dp)
                         ) {
                             val schemes = listOf(
+                                "Vintage Parchment",
+                                "OsmAnd (HD maps + relief)",
                                 "OSM Standard", 
                                 "OSM Humanitarian", 
                                 "OSM French", 
                                 "Slate Neon", 
                                 "Cyberpunk", 
                                 "Muted Gray", 
-                                "Ocean Breeze"
+                                "Ocean Breeze",
+                                "Google Maps"
                             )
                             items(schemes.size) { index ->
                                 val themeName = schemes[index]
@@ -3753,6 +5301,262 @@ fun SettingsDialog(
                         )
                     }
                 }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                // SECTION: AI API SETTINGS (OpenAI vs Gemini vs OpenRouter)
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = if (isEnglish) "AI Service Provider" else "Furnizor Serviciu AI",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    // Provider Toggle
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = if (isEnglish) "Select AI Engine" else "Selectează Motorul AI",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Button(
+                                onClick = { onAiProviderChange("GEMINI") },
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (aiProvider == "GEMINI") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = if (aiProvider == "GEMINI") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                modifier = Modifier.weight(1f).testTag("provider_gemini_button")
+                            ) {
+                                Text("Gemini", fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            }
+                            Button(
+                                onClick = { onAiProviderChange("OPENAI") },
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (aiProvider == "OPENAI") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = if (aiProvider == "OPENAI") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                modifier = Modifier.weight(1f).testTag("provider_openai_button")
+                            ) {
+                                Text("OpenAI", fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            }
+                            Button(
+                                onClick = { onAiProviderChange("OPENROUTER") },
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (aiProvider == "OPENROUTER") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = if (aiProvider == "OPENROUTER") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                modifier = Modifier.weight(1f).testTag("provider_openrouter_button")
+                            ) {
+                                Text("OpenRouter", fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            }
+                        }
+                    }
+
+                    // OpenAI Key TextField
+                    if (aiProvider == "OPENAI") {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = openaiApiKey,
+                            onValueChange = onOpenaiApiKeyChange,
+                            label = { Text(if (isEnglish) "OpenAI API Key" else "Cheie API OpenAI") },
+                            placeholder = { Text("sk-proj-...") },
+                            singleLine = true,
+                            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("openai_key_input"),
+                            trailingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = "Secure Key",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                            )
+                        )
+                        Text(
+                            text = if (isEnglish) 
+                                "Enter your personal OpenAI API Key. It is stored securely in your local preferences." 
+                                else "Introdu cheia personală API OpenAI. Este salvată în siguranță local.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+                    }
+
+                    // OpenRouter Block
+                    if (aiProvider == "OPENROUTER") {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        
+                        // API Key Input
+                        OutlinedTextField(
+                            value = openrouterApiKey,
+                            onValueChange = onOpenrouterApiKeyChange,
+                            label = { Text(if (isEnglish) "OpenRouter API Key" else "Cheie API OpenRouter") },
+                            placeholder = { Text("sk-or-...") },
+                            singleLine = true,
+                            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("openrouter_key_input"),
+                            trailingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = "Secure Key",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+                        
+                        // Model ID Input
+                        OutlinedTextField(
+                            value = openrouterModel,
+                            onValueChange = onOpenrouterModelChange,
+                            label = { Text(if (isEnglish) "OpenRouter Model ID" else "ID Model OpenRouter") },
+                            placeholder = { Text("google/gemma-2-9b-it:free") },
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("openrouter_model_input"),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // Presets Row for Quick Insertion
+                        Text(
+                            text = if (isEnglish) "Model Quick Presets:" else "Presetări rapide model:",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        
+                        // Display clean horizontal scrollable presets
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val presets = listOf(
+                                "gpt-oss-120b",
+                                "google/gemma-2-9b-it:free",
+                                "meta-llama/llama-3-8b-instruct:free",
+                                "mistralai/mistral-7b-instruct:free"
+                            )
+                            presets.forEach { presetName ->
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (openrouterModel == presetName) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                            else MaterialTheme.colorScheme.surfaceVariant
+                                        )
+                                        .clickable { onOpenrouterModelChange(presetName) }
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (openrouterModel == presetName) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = presetName,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (openrouterModel == presetName) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = if (isEnglish) 
+                                "Enter your OpenRouter key and select/type a Model. Use 'gpt-oss-120b' or other free models on OpenRouter." 
+                                else "Introdu cheia OpenRouter și alege/scrie un Model. Poți folosi 'gpt-oss-120b' sau alte modele gratuite din OpenRouter.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+                    }
+                }
+                
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                // SECTION: DATA & STORAGE
+                var showWipeConfirm by remember { mutableStateOf(false) }
+
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = if (isEnglish) "Data & Storage" else "Date și Stocare",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Button(
+                        onClick = { showWipeConfirm = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(imageVector = Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = if (isEnglish) "Factory Reset & Wipe All Data" else "Ștergere totală a datelor", fontWeight = FontWeight.Bold)
+                    }
+
+                    if (showWipeConfirm) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.1f)),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = if (isEnglish) "Are you sure? This will permanently delete ALL saved itineraries, field testing logs, and custom spots." else "Ești sigur? Aceasta va șterge DEFINITIV toate itinerariile salvate, rapoartele de testare și punctele personalizate.",
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    TextButton(onClick = { showWipeConfirm = false }, modifier = Modifier.weight(1f)) {
+                                        Text(if (isEnglish) "Cancel" else "Anulează")
+                                    }
+                                    Button(
+                                        onClick = {
+                                            onFactoryReset()
+                                            showWipeConfirm = false
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(if (isEnglish) "WIPE" else "ȘTERGE")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -3765,6 +5569,44 @@ fun SettingsDialog(
                     text = if (isEnglish) "Apply & Close" else "Aplică și Închide",
                     fontWeight = FontWeight.Bold
                 )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { showChangelog = true }) {
+                Text(text = if (isEnglish) "Changelog" else "Modificări")
+            }
+        }
+    )
+}
+
+@Composable
+fun ChangelogDialog(isEnglish: Boolean, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = if (isEnglish) "Changelog & Versions" else "Versiuni și Modificări", fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                val versions = listOf(
+                    "0.107" to (if (isEnglish) "Added the ability to clear all saved itineraries." else "S-a adăugat posibilitatea de a șterge toate itinerariile salvate."),
+                    "0.106" to (if (isEnglish) "Added the ability to share the field testing report." else "S-a adăugat posibilitatea de a partaja raportul de testare pe teren."),
+                    "0.105" to (if (isEnglish) "Added the ability to share saved itineraries." else "S-a adăugat funcționalitatea de a partaja itinerarii salvate."),
+                    "0.104" to (if (isEnglish) "Added Changelog button in settings and version tracking." else "S-a adăugat butonul de Modificări în setări și urmărirea versiunilor."),
+                    "0.103" to (if (isEnglish) "Fix automatic regeneration of AI tips on tab switch." else "S-a reparat regenerarea automată a sfaturilor AI la schimbarea filei."),
+                    "0.102" to (if (isEnglish) "Added new AI Providers (OpenRouter) and custom skins." else "S-au adăugat noi furnizori AI (OpenRouter) și teme vizuale."),
+                    "0.101" to (if (isEnglish) "Initial beta release with interactive map, routing and AI tips." else "Lansare inițială beta cu hartă interactivă, rute și sfaturi AI.")
+                )
+                
+                versions.forEach { (version, description) ->
+                    Text(text = "v$version", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text(text = description, modifier = Modifier.padding(bottom = 12.dp, top = 2.dp))
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text(text = if (isEnglish) "Close" else "Închide")
             }
         }
     )
