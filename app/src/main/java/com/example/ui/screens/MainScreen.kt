@@ -2816,7 +2816,10 @@ fun SpotsChecklistTab(
                     }
                 }
 
-                items(filteredSpots) { spot ->
+                items(
+                    items = filteredSpots,
+                    key = { spot -> spot.id }
+                ) { spot ->
                     val isCurrentStart = (translatedCustomStartSpot?.id == spot.id) || 
                         (translatedCustomStartSpot == null && spot.name == TransitNetwork.getStartSpot(city).translate(isEnglish).name)
 
@@ -4432,7 +4435,10 @@ fun LiveTestingTab(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             contentPadding = PaddingValues(bottom = 6.dp)
                         ) {
-                            items(itinerarySpots) { s ->
+                            items(
+                                items = itinerarySpots,
+                                key = { s -> s }
+                            ) { s ->
                                 val isSelected = placeNameInput == s
                                 Box(
                                     modifier = Modifier
@@ -4587,7 +4593,10 @@ fun LiveTestingTab(
                 }
             }
         } else {
-            items(testingLogs) { log ->
+            items(
+                items = testingLogs,
+                key = { log -> log.id }
+            ) { log ->
                 val timeFormatted = remember(log.timestamp) {
                     val sdf = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
                     sdf.format(java.util.Date(log.timestamp))
@@ -4763,7 +4772,10 @@ fun SavedItinerariesTab(
                 .padding(bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-        items(itineraries) { record ->
+        items(
+            items = itineraries,
+            key = { record -> record.id }
+        ) { record ->
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = if (appSkin == "VINTAGE_RPG") Color(0xFF261910) else MaterialTheme.colorScheme.surface
