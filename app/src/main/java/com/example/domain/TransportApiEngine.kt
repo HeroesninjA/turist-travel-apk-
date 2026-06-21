@@ -44,6 +44,13 @@ data class SmsTicketConfig(
     val validityMinutes: Int
 )
 
+data class TransitOperatorInfo(
+    val shortName: String,
+    val fullName: String,
+    val website: String,
+    val emoji: String
+)
+
 object TransportApiEngine {
 
     // Retrieve operators depending on the active city
@@ -53,6 +60,20 @@ object TransportApiEngine {
             "Brașov" -> TransportOperator.RATBV
             "Câmpina" -> TransportOperator.ELIADO
             else -> TransportOperator.CTP
+        }
+    }
+
+    fun getOperatorUiInfo(city: String): TransitOperatorInfo {
+        return when (city) {
+            "București" -> TransitOperatorInfo("STB", "Societatea de Transport București S.A.", "https://www.stb.ro", "🚋")
+            "Brașov" -> TransitOperatorInfo("RATBV", "RATBV S.A. Brașov", "https://www.ratbv.ro", "🚌")
+            "Câmpina" -> TransitOperatorInfo("Eliado", "Eliado Trans Câmpina S.R.L.", "https://www.eliado.ro", "🚎")
+            "Cluj-Napoca" -> TransitOperatorInfo("CTP Cluj", "Compania de Transport Public Cluj-Napoca S.A.", "https://ctpcj.ro", "🚍")
+            else -> {
+                val short = "TP $city"
+                val full = "Regia de Transport Public $city S.A."
+                TransitOperatorInfo(short, full, "https://google.com/search?q=transport+public+$city", "🚍")
+            }
         }
     }
 
@@ -77,11 +98,17 @@ object TransportApiEngine {
                 costExplanation = "3.00 Lei pentru o călătorie urbană Eliado Câmpina.",
                 validityMinutes = 60
             )
-            else -> SmsTicketConfig( // Cluj-Napoca
+            "Cluj-Napoca" -> SmsTicketConfig(
                 number = "7400",
                 messageBody = "M30",
                 costExplanation = "0.65 € + TVA (~3.2 Lei) pentru o călătorie urbană de 30 min pe orice linie CTP Cluj.",
                 validityMinutes = 30
+            )
+            else -> SmsTicketConfig(
+                number = "7400",
+                messageBody = "BILET",
+                costExplanation = "Tarif local standard pentru o călătorie de transport public în $city.",
+                validityMinutes = 60
             )
         }
     }

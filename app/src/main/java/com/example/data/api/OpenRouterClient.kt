@@ -157,4 +157,179 @@ object OpenRouterRepository {
             }
         }
     }
+
+    suspend fun autoConfigureNewCity(
+        apiKey: String,
+        model: String,
+        city: String,
+        isEnglish: Boolean = false
+    ): String {
+        val resolvedKey = apiKey.trim()
+        if (resolvedKey.isEmpty()) {
+            throw IllegalStateException(
+                if (isEnglish) "OpenRouter API Key has not been configured in Settings."
+                else "Cheia API OpenRouter nu este configurată în Setări."
+            )
+        }
+        val authHeader = "Bearer $resolvedKey"
+        val resolvedModel = if (model.trim().isEmpty()) "meta-llama/llama-3-8b-instruct:free" else model.trim()
+
+        val prompt = """
+            We want to automatically index and configure a new city named: "$city".
+            You MUST return a valid JSON object. Do not include any text before or after the JSON.
+            Ensure the coordinates are real-world, accurate geographical locations for this city.
+            
+            The JSON object must have exactly the following structure:
+            {
+              "cityName": "$city",
+              "centerLatitude": 45.1234, // real decimal latitude of this city's center
+              "centerLongitude": 25.1234, // real decimal longitude of this city's center
+              "spots": [
+                {
+                  "name": "Landmark Name 1",
+                  "description": "Short description of landmark 1",
+                  "latitude": 45.1235,
+                  "longitude": 25.1235,
+                  "duration": 90
+                }
+                // provide 4 to 6 major attractions
+              ],
+              "stations": [
+                {
+                  "id": "STAT_1",
+                  "name": "Station Name 1",
+                  "latitude": 45.1230,
+                  "longitude": 25.1234
+                }
+                // provide 4 to 5 transit stations close to the spots above
+              ],
+              "lines": [
+                {
+                  "name": "L1",
+                  "color": "#10B981",
+                  "type": "BUS",
+                  "stationIds": ["STAT_1", "STAT_2"]
+                }
+                // provide 1 to 2 transit lines connecting the stations
+              ],
+              "weatherAdviceEn": "Sunny advice...",
+              "weatherAdviceRo": "Sfaturi meteo...",
+              "tempCelsius": 22
+            }
+            
+            Provide only valid JSON code. No backticks (```json), no conversational filler.
+        """.trimIndent()
+
+        val systemInstruction = "You are a professional geo-mapping, public transit and tourism expert who outputs ONLY strict, valid raw JSON objects matching schemas."
+
+        val messages = listOf(
+            OpenRouterMessage(role = "system", content = systemInstruction),
+            OpenRouterMessage(role = "user", content = prompt)
+        )
+
+        val request = OpenRouterChatRequest(
+            model = resolvedModel,
+            messages = messages,
+            temperature = 0.2f
+        )
+
+        val response = OpenRouterRetrofitClient.service.generateChat(
+            authorization = authHeader,
+            referer = "https://ai.studio/build",
+            title = "AI Studio Bus Tour Planner",
+            request = request
+        )
+        var text = response.choices?.firstOrNull()?.message?.content ?: throw IllegalStateException("Empty response from AI")
+
+        text = text.trim()
+        if (text.startsWith("```json")) {
+            text = text.substringAfter("```json").substringBeforeLast("```").trim()
+        } else if (text.startsWith("```")) {
+            text = text.substringAfter("```").substringBeforeLast("```").trim()
+        }
+        return text
+    }
+
+    suspend fun searchAndGenerateLandmark(
+        apiKey: String,
+        model: String,
+        city: String,
+        query: String,
+        isEnglish: Boolean = false
+    ): String {
+        val resolvedKey = apiKey.trim()
+        if (resolvedKey.isEmpty()) {
+            throw IllegalStateException(
+                if (isEnglish) "OpenRouter API Key has not been configured in Settings."
+                else "Cheia API OpenRouter nu este configurată în Setări."
+            )
+        }
+        val authHeader = "Bearer $resolvedKey"
+        val resolvedModel = if (model.trim().isEmpty()) "meta-llama/llama-3-8b-instruct:free" else model.trim()
+
+        val prompt = if (isEnglish) {
+            """
+                We want to find and automatically configure a specific tourist landmark/attraction matching the query "$query" in the city of "$city".
+                You MUST return a valid JSON object. Do not include any text before or after the JSON.
+                Ensure the coordinates are real-world, accurate geographical locations for this landmark in this city.
+                
+                The JSON object must have exactly the following structure:
+                {
+                  "name": "Landmark Name", // complete official name of the attraction
+                  "description": "Short, highly informative description of this landmark",
+                  "latitude": 45.1235, // real decimal latitude coordinates
+                  "longitude": 25.1235, // real decimal longitude coordinates
+                  "duration": 90 // estimated optimal visit duration in minutes (integer)
+                }
+                
+                Provide only valid JSON code. No backticks (```json), no conversational filler.
+            """.trimIndent()
+        } else {
+            """
+                Vrem să găsim și să configurăm automat un obiectiv/atracție turistică specifică ce corespunde căutării "$query" în orașul "$city".
+                Trebuie să returnezi un obiect JSON valid. Nu include text înainte sau după JSON.
+                Asigură-te că coordonatele sunt reale și precise pentru acest obiectiv în acest de oraș.
+                
+                Obiectul JSON trebuie să aibă exact următoarea structură:
+                {
+                  "name": "Nume Obiectiv Turistic", // numele oficial complet al atracției
+                  "description": "Descriere scurtă și informativă a obiectivului",
+                  "latitude": 45.1235, // coordonate reale latitudine (decimal)
+                  "longitude": 25.1235, // coordonate reale longitudine (decimal)
+                  "duration": 90 // timp estimat optim de vizită în minute (întreg)
+                }
+                
+                Furnizează doar cod JSON valid. Fără delimitatori de formatare markdown (lucru precum ```json) sau text adițional explicativ.
+            """.trimIndent()
+        }
+
+        val systemInstruction = "You are an expert tour guide and geographer specializing in Romanian cities and sights. Your output is ONLY a strict, valid raw JSON object matching the requested schema."
+
+        val messages = listOf(
+            OpenRouterMessage(role = "system", content = systemInstruction),
+            OpenRouterMessage(role = "user", content = prompt)
+        )
+
+        val request = OpenRouterChatRequest(
+            model = resolvedModel,
+            messages = messages,
+            temperature = 0.2f
+        )
+
+        val response = OpenRouterRetrofitClient.service.generateChat(
+            authorization = authHeader,
+            referer = "https://ai.studio/build",
+            title = "AI Studio Bus Tour Planner",
+            request = request
+        )
+        var text = response.choices?.firstOrNull()?.message?.content ?: throw IllegalStateException("Empty response from AI")
+
+        text = text.trim()
+        if (text.startsWith("```json")) {
+            text = text.substringAfter("```json").substringBeforeLast("```").trim()
+        } else if (text.startsWith("```")) {
+            text = text.substringAfter("```").substringBeforeLast("```").trim()
+        }
+        return text
+    }
 }
